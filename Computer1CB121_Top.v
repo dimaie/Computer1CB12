@@ -76,7 +76,7 @@ wire mem_oe;
 wire[7:0] mem_out;
 
 // VGA memory interface signals (to be connected to VGA controller later)
-wire [12:0] vga_gfx_addr;
+wire [13:0] vga_gfx_addr;
 wire [7:0]  vga_gfx_data;
 wire [11:0] vga_txt_addr;
 wire [7:0]  vga_txt_data;

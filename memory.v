@@ -17,7 +17,7 @@ module memory(
     output reg  [7:0]  out,
     
     // VGA Controller Interface (Read-Only Dual Port)
-    input  wire [12:0] vga_gfx_addr,
+    input  wire [13:0] vga_gfx_addr,
     output wire [7:0]  vga_gfx_data,
     
     input  wire [11:0] vga_txt_addr,
@@ -43,7 +43,7 @@ module memory(
 
     // Write enables for specific memory blocks
     wire we_ram  = ram_we && (mar >= 16'h2000 && mar <= 16'h3FFF);
-    wire we_gfx  = ram_we && (mar >= 16'h8000 && mar <= 16'h9FFF);
+    wire we_gfx  = ram_we && (mar >= 16'h4000 && mar <= 16'h67FF); // 0x4000 to 0x67FF for 10KB space
     wire we_txt  = ram_we && (mar >= 16'hA000 && mar <= 16'hAFFF);
     wire we_font = ram_we && (mar >= 16'hB000 && mar <= 16'hB7FF);
 
@@ -58,17 +58,17 @@ module memory(
         .clk(clk), .we(we_ram), .addr(mar[12:0]), .d(bus[7:0]), .q(ram_out)
     );
 
-    block_ram_sdp #(.ADDR_WIDTH(13)) gfx_ram_inst (
-        .clk(clk), .we_a(we_gfx), .addr_a(mar[12:0]), .d_a(bus[7:0]),
+    block_ram_sdp #(.ADDR_WIDTH(14), .DEPTH(10240), .INIT_FILE("")) gfx_ram_inst (
+        .clk(clk), .we_a(we_gfx), .addr_a(mar[13:0]), .d_a(bus[7:0]),
         .addr_b(vga_gfx_addr), .q_b(vga_gfx_data)
     );
 
-    block_ram_sdp #(.ADDR_WIDTH(12)) txt_ram_inst (
+    block_ram_sdp #(.ADDR_WIDTH(12), .INIT_FILE("")) txt_ram_inst (
         .clk(clk), .we_a(we_txt), .addr_a(mar[11:0]), .d_a(bus[7:0]),
         .addr_b(vga_txt_addr), .q_b(vga_txt_data)
     );
 
-    block_ram_sdp #(.ADDR_WIDTH(11), .INIT_FILE("vga_font.hex")) font_ram_inst (
+    block_ram_sdp #(.ADDR_WIDTH(11), .INIT_FILE("font_rom.hex")) font_ram_inst (
         .clk(clk), .we_a(we_font), .addr_a(mar[10:0]), .d_a(bus[7:0]),
         .addr_b(vga_font_addr), .q_b(vga_font_data)
     );
@@ -128,7 +128,9 @@ module block_rom #(
     output reg  [7:0]            q
 );
     reg [7:0] rom [0:(1<<ADDR_WIDTH)-1];
-    initial $readmemh(INIT_FILE, rom);
+    initial begin
+        if (INIT_FILE != "") $readmemh(INIT_FILE, rom);
+    end
     always @(posedge clk) begin
         q <= rom[addr];
     end
@@ -154,7 +156,8 @@ endmodule
 // Simple Dual-Port RAM (Port A = Write-Only, Port B = Read-Only)
 module block_ram_sdp #(
     parameter ADDR_WIDTH = 13,
-    parameter INIT_FILE = "none"
+    parameter DEPTH = (1 << ADDR_WIDTH),
+    parameter INIT_FILE = ""
 )(
     input  wire                  clk,
     input  wire                  we_a,
@@ -163,12 +166,8 @@ module block_ram_sdp #(
     input  wire [ADDR_WIDTH-1:0] addr_b,
     output reg  [7:0]            q_b
 );
-    reg [7:0] ram [0:(1<<ADDR_WIDTH)-1];
-    initial begin
-        if (INIT_FILE != "none") begin
-            $readmemh(INIT_FILE, ram);
-        end
-    end
+    (* ram_init_file = INIT_FILE *)
+    reg [7:0] ram [0:DEPTH-1];
     always @(posedge clk) begin
         if (we_a) ram[addr_a] <= d_a;
     end
