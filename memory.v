@@ -68,7 +68,7 @@ module memory(
         .addr_b(vga_txt_addr), .q_b(vga_txt_data)
     );
 
-    block_ram_sdp #(.ADDR_WIDTH(11)) font_ram_inst (
+    block_ram_sdp #(.ADDR_WIDTH(11), .INIT_FILE("vga_font.hex")) font_ram_inst (
         .clk(clk), .we_a(we_font), .addr_a(mar[10:0]), .d_a(bus[7:0]),
         .addr_b(vga_font_addr), .q_b(vga_font_data)
     );
@@ -153,7 +153,8 @@ endmodule
 
 // Simple Dual-Port RAM (Port A = Write-Only, Port B = Read-Only)
 module block_ram_sdp #(
-    parameter ADDR_WIDTH = 13
+    parameter ADDR_WIDTH = 13,
+    parameter INIT_FILE = "none"
 )(
     input  wire                  clk,
     input  wire                  we_a,
@@ -163,6 +164,11 @@ module block_ram_sdp #(
     output reg  [7:0]            q_b
 );
     reg [7:0] ram [0:(1<<ADDR_WIDTH)-1];
+    initial begin
+        if (INIT_FILE != "none") begin
+            $readmemh(INIT_FILE, ram);
+        end
+    end
     always @(posedge clk) begin
         if (we_a) ram[addr_a] <= d_a;
     end
