@@ -40,9 +40,6 @@ module memory(
     // Output wires from physical memory blocks
     wire [7:0] rom_out;
     wire [7:0] ram_out;
-    wire [7:0] gfx_out;
-    wire [7:0] txt_out;
-    wire [7:0] font_out;
 
     // Write enables for specific memory blocks
     wire we_ram  = ram_we && (mar >= 16'h2000 && mar <= 16'h3FFF);
@@ -61,18 +58,18 @@ module memory(
         .clk(clk), .we(we_ram), .addr(mar[12:0]), .d(bus[7:0]), .q(ram_out)
     );
 
-    block_ram_dp #(.ADDR_WIDTH(13)) gfx_ram_inst (
-        .clk(clk), .we_a(we_gfx), .addr_a(mar[12:0]), .d_a(bus[7:0]), .q_a(gfx_out),
+    block_ram_sdp #(.ADDR_WIDTH(13)) gfx_ram_inst (
+        .clk(clk), .we_a(we_gfx), .addr_a(mar[12:0]), .d_a(bus[7:0]),
         .addr_b(vga_gfx_addr), .q_b(vga_gfx_data)
     );
 
-    block_ram_dp #(.ADDR_WIDTH(12)) txt_ram_inst (
-        .clk(clk), .we_a(we_txt), .addr_a(mar[11:0]), .d_a(bus[7:0]), .q_a(txt_out),
+    block_ram_sdp #(.ADDR_WIDTH(12)) txt_ram_inst (
+        .clk(clk), .we_a(we_txt), .addr_a(mar[11:0]), .d_a(bus[7:0]),
         .addr_b(vga_txt_addr), .q_b(vga_txt_data)
     );
 
-    block_ram_dp #(.ADDR_WIDTH(11)) font_ram_inst (
-        .clk(clk), .we_a(we_font), .addr_a(mar[10:0]), .d_a(bus[7:0]), .q_a(font_out),
+    block_ram_sdp #(.ADDR_WIDTH(11)) font_ram_inst (
+        .clk(clk), .we_a(we_font), .addr_a(mar[10:0]), .d_a(bus[7:0]),
         .addr_b(vga_font_addr), .q_b(vga_font_data)
     );
 
@@ -107,18 +104,12 @@ module memory(
             out = rom_out;
         else if (mar_d1 >= 16'h2000 && mar_d1 <= 16'h3FFF)
             out = ram_out;
-        else if (mar_d1 >= 16'h8000 && mar_d1 <= 16'h9FFF)
-            out = gfx_out;
-        else if (mar_d1 >= 16'hA000 && mar_d1 <= 16'hAFFF)
-            out = txt_out;
-        else if (mar_d1 >= 16'hB000 && mar_d1 <= 16'hB7FF)
-            out = font_out;
         else if (mar_d1 == 16'hC001)
             out = ink_color;
         else if (mar_d1 == 16'hC002)
             out = bg_color;
         else
-            out = 8'h00;
+            out = 8'h00; // Default out for unmapped or write-only video RAM regions
     end
 
 endmodule
@@ -160,22 +151,20 @@ module block_ram #(
     end
 endmodule
 
-// Dual-Port RAM
-module block_ram_dp #(
+// Simple Dual-Port RAM (Port A = Write-Only, Port B = Read-Only)
+module block_ram_sdp #(
     parameter ADDR_WIDTH = 13
 )(
     input  wire                  clk,
     input  wire                  we_a,
     input  wire [ADDR_WIDTH-1:0] addr_a,
     input  wire [7:0]            d_a,
-    output reg  [7:0]            q_a,
     input  wire [ADDR_WIDTH-1:0] addr_b,
     output reg  [7:0]            q_b
 );
     reg [7:0] ram [0:(1<<ADDR_WIDTH)-1];
     always @(posedge clk) begin
         if (we_a) ram[addr_a] <= d_a;
-        q_a <= ram[addr_a];
     end
     always @(posedge clk) begin
         q_b <= ram[addr_b];

@@ -44,6 +44,28 @@ set_location_assignment PIN_48 -to LEDR[5]
 set_location_assignment PIN_49 -to LEDR[6]
 set_location_assignment PIN_50 -to LEDR[7]
 
+# VGA Output
+set_location_assignment PIN_75 -to VGA_HSYNC
+set_location_assignment PIN_74 -to VGA_VSYNC
+set_location_assignment PIN_104 -to VGA_R[5]
+set_location_assignment PIN_101 -to VGA_R[4]
+set_location_assignment PIN_100 -to VGA_R[3]
+set_location_assignment PIN_99 -to VGA_R[2]
+set_location_assignment PIN_98 -to VGA_R[1]
+set_location_assignment PIN_95 -to VGA_R[0]
+set_location_assignment PIN_94 -to VGA_G[5]
+set_location_assignment PIN_93 -to VGA_G[4]
+set_location_assignment PIN_88 -to VGA_G[3]
+set_location_assignment PIN_87 -to VGA_G[2]
+set_location_assignment PIN_86 -to VGA_G[1]
+set_location_assignment PIN_85 -to VGA_G[0]
+set_location_assignment PIN_84 -to VGA_B[5]
+set_location_assignment PIN_83 -to VGA_B[4]
+set_location_assignment PIN_82 -to VGA_B[3]
+set_location_assignment PIN_79 -to VGA_B[2]
+set_location_assignment PIN_78 -to VGA_B[1]
+set_location_assignment PIN_77 -to VGA_B[0]
+
 # I/O Standard
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CLOCK_21
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to RESET_N
@@ -52,6 +74,11 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to PS2_DAT
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LEDR[*]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_HSYNC
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_VSYNC
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_R[*]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_G[*]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_B[*]
 
 set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top

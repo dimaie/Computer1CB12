@@ -29,6 +29,13 @@ module Computer1CB121_Top(
 	output		          		UART_TXD,    // UART Transmit Data
 	input 		          		UART_RXD,    // UART Receive Data
 
+	//////////// VGA //////////
+	output		          		VGA_HSYNC,
+	output		          		VGA_VSYNC,
+	output		     [5:0]		VGA_R,
+	output		     [5:0]		VGA_G,
+	output		     [5:0]		VGA_B,
+
 	//////////// LED //////////
 	output		     [7:0]		LEDR         // LED outputs
 	
@@ -69,11 +76,11 @@ wire mem_oe;
 wire[7:0] mem_out;
 
 // VGA memory interface signals (to be connected to VGA controller later)
-wire [12:0] vga_gfx_addr = 13'd0;
+wire [12:0] vga_gfx_addr;
 wire [7:0]  vga_gfx_data;
-wire [11:0] vga_txt_addr = 12'd0;
+wire [11:0] vga_txt_addr;
 wire [7:0]  vga_txt_data;
-wire [10:0] vga_font_addr = 11'd0;
+wire [10:0] vga_font_addr;
 wire [7:0]  vga_font_data;
 wire [7:0]  ink_color;
 wire [7:0]  bg_color;
@@ -279,6 +286,26 @@ uart #(
 	.tx_busy(uart_tx_busy),
 	.rx_data(uart_rx_data),
 	.rx_done(uart_rx_done)
+);
+
+// VGA Display Controller
+display_controller vga_ctrl(
+	.clk(clk_25m),
+	.rst(rst),
+	.vga_gfx_addr(vga_gfx_addr),
+	.vga_gfx_data(vga_gfx_data),
+	.vga_txt_addr(vga_txt_addr),
+	.vga_txt_data(vga_txt_data),
+	.vga_font_addr(vga_font_addr),
+	.vga_font_data(vga_font_data),
+	.layer_enable(2'b11), // Both layers enabled by default
+	.ink_color(ink_color),
+	.bg_color(bg_color),
+	.vga_hsync(VGA_HSYNC),
+	.vga_vsync(VGA_VSYNC),
+	.vga_r(VGA_R),
+	.vga_g(VGA_G),
+	.vga_b(VGA_B)
 );
 
 endmodule
