@@ -1,0 +1,4 @@
+Info (10281): Verilog HDL Declaration information at alu.v(43): object "flg_z" differs only in case from object "FLG_Z" in the same scope
+Info (10281): Verilog HDL Declaration information at alu.v(42): object "flg_c" differs only in case from object "FLG_C" in the same scope
+Info (10281): Verilog HDL Declaration information at alu.v(44): object "flg_p" differs only in case from object "FLG_P" in the same scope
+Info (10281): Verilog HDL Declaration information at alu.v(45): object "flg_s" differs only in case from object "FLG_S" in the same scope

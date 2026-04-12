@@ -1,0 +1,20 @@
+# Quartus build directories
+db/
+incremental_db/
+output_files/
+simulation/
+greybox_tmp/
+*.bak
+# Quartus build artifacts
+*.rpt
+*.summary
+*.done
+*.pin
+*.jdi
+*.sof
+*.pof
+*.qws
+
+# ModelSim artifacts
+transcript
+*.wlf
