@@ -43,24 +43,23 @@ module memory(
     wire [7:0] gfx_ram_out;
 
     // Write enables for specific memory blocks
-    wire we_ram  = ram_we && (mar >= 16'h1800 && mar <= 16'h3FFF); // 10KB Program RAM
-    wire we_gfx  = ram_we && (mar >= 16'h4000 && mar <= 16'h67FF); // 0x4000 to 0x67FF for 10KB space
-    wire we_txt  = ram_we && (mar >= 16'hA000 && mar <= 16'hAFFF);
+    wire we_ram  = ram_we && (mar >= 16'h2000 && mar <= 16'h3FFF); // 8KB Program RAM
+    wire we_gfx  = ram_we && (mar >= 16'h4000 && mar <= 16'h657F); // Strictly 9600 bytes (320x240)
+    wire we_txt  = ram_we && (mar >= 16'hA000 && mar <= 16'hA95F); // Strictly 2400 bytes (80x30)
     wire we_font = ram_we && (mar >= 16'hB000 && mar <= 16'hB7FF); // 2KB Font space
 
     // -------------------------------------------------------------------------
     // Instantiations of Generic Block RAM Modules
     // -------------------------------------------------------------------------
-    block_rom #(.ADDR_WIDTH(11), .INIT_FILE("")) rom_inst (
+    block_rom #(.ADDR_WIDTH(11), .INIT_FILE("program.hex")) rom_inst (
         .clk(clk), .addr(mar[10:0]), .q(rom_out)
     );
 
-    wire [13:0] ram_addr = mar[13:0] - 14'h1800;
-    block_ram #(.ADDR_WIDTH(14), .DEPTH(10240)) ram_inst (
-        .clk(clk), .we(we_ram), .addr(ram_addr), .d(bus[7:0]), .q(ram_out)
+    block_ram #(.ADDR_WIDTH(13), .DEPTH(8192)) ram_inst (
+        .clk(clk), .we(we_ram), .addr(mar[12:0]), .d(bus[7:0]), .q(ram_out)
     );
 
-    vga_shared_tdp_ram #(.ADDR_WIDTH(14), .DEPTH(9600), .INIT_FILE("graph_ram.hex")) gfx_ram_inst (
+    vga_shared_tdp_ram #(.ADDR_WIDTH(14), .DEPTH(9600), .INIT_FILE("")) gfx_ram_inst (
         .clk(clk), .we_a(we_gfx), .addr_a(mar[13:0]), .d_a(bus[7:0]), .q_a(gfx_ram_out),
         .addr_b(vga_gfx_addr[13:0]), .q_b(vga_gfx_data)
     );
@@ -104,9 +103,9 @@ module memory(
     always @(*) begin
         if (mar_d1 <= 16'h07FF)
             out = rom_out;
-        else if (mar_d1 >= 16'h1800 && mar_d1 <= 16'h3FFF)
+        else if (mar_d1 >= 16'h2000 && mar_d1 <= 16'h3FFF)
             out = ram_out;
-        else if (mar_d1 >= 16'h4000 && mar_d1 <= 16'h67FF)
+        else if (mar_d1 >= 16'h4000 && mar_d1 <= 16'h657F)
             out = gfx_ram_out;
         else if (mar_d1 == 16'hC001)
             out = ink_color;
