@@ -77,22 +77,26 @@ module display_controller(
     wire [9:0] y_fetch_f = (x_cnt >= H_TOTAL - 10'd1) ? y_next : y_cnt;
 
     // Stage 0 -> Address Calculation
-    wire [11:0] txt_row = {7'b0, y_fetch_t[8:4]};
-    assign vga_txt_addr = (txt_row << 6) + (txt_row << 4) + {5'b0, h_next_t[9:3]}; // Row * 80 + Col
+    // Clamp rows and cols to visible screen bounds to prevent out-of-bounds memory reads during blanking
+    wire [9:0] safe_h_t  = (h_next_t < H_VISIBLE) ? h_next_t : 10'd0;
+    wire [9:0] safe_y_t  = (y_fetch_t < V_VISIBLE) ? y_fetch_t : 10'd0;
+    wire [11:0] txt_row  = {7'b0, safe_y_t[8:4]};
+    assign vga_txt_addr  = (txt_row << 6) + (txt_row << 4) + {5'b0, safe_h_t[9:3]}; // Row * 80 + Col
     
     // 320x240 scaling: exactly 2x2 VGA pixels.
-    wire [13:0] gfx_row = {6'b0, y_fetch_g[8:1]};
-    assign vga_gfx_addr = (gfx_row << 5) + (gfx_row << 3) + h_next_g[9:4]; // Scaled_Row * 40 + Scaled_Col
+    wire [9:0] safe_h_g  = (h_next_g < H_VISIBLE) ? h_next_g : 10'd0;
+    wire [9:0] safe_y_g  = (y_fetch_g < V_VISIBLE) ? y_fetch_g : 10'd0;
+    wire [13:0] gfx_row  = {6'b0, safe_y_g[8:1]};
+    assign vga_gfx_addr  = (gfx_row << 5) + (gfx_row << 3) + safe_h_g[9:4]; // Scaled_Row * 40 + Scaled_Col
 
     // Stage 2 -> Combinational Font Address Calculation
-    // Use [3:1] to stretch the 8x8 font vertically by repeating each scanline twice
-    // Use [7:0] to map the full 256-character space of the font ROM
+    // Stretch the 8x8 font vertically by repeating each scanline twice
     assign vga_font_addr = {vga_txt_data[7:0], y_fetch_f[3:1]};
 
     // Stage 4/5 -> Final Extraction and Video Mixer
     wire text_pixel    = vga_font_data[ 3'd7 - x_cnt[2:0] ]; // MSB is drawn left-most
     wire gfx_pixel     = vga_gfx_data[ 3'd7 - x_cnt[3:1] ];  // MSB is drawn left-most
-    wire in_gfx_bounds = 1'b1; // Now covers full screen
+    wire in_gfx_bounds = 1'b1; // Full screen
 
     // Layer [1] = Graphics, Layer [0] = Text
     wire draw_ink = (layer_enable[0] && text_pixel) || (layer_enable[1] && in_gfx_bounds && gfx_pixel);

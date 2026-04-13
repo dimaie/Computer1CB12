@@ -20,10 +20,11 @@ The hardware is based on the OneChipBook laptop. `OneChipBook12-TechRef.pdf` is 
 
 ## Memory Map
 - `0x0000` - `0x07FF`: 2KB Program ROM
-- `0x2000` - `0x3FFF`: 8KB Program RAM
-- `0x4000` - `0x67FF`: 10KB Video Graphics RAM (320x240 monochrome)
-- `0xA000` - `0xAFFF`: 4KB Video Text RAM (80x30 text mode)
-- `0xB000` - `0xB7FF`: 2KB Video Font RAM (16x8 character fonts, 128 chars)
+- `0x0800` - `0x17FF`: Unused
+- `0x1800` - `0x3FFF`: 10KB Program RAM
+- `0x4000` - `0x67FF`: 10KB Video Graphics RAM (320x240 monochrome, Read/Write)
+- `0xA000` - `0xAFFF`: 4KB Video Text RAM (80x30 text mode, Write-Only)
+- `0xB000` - `0xB7FF`: 2KB Video Font RAM (8x8 character fonts, 256 chars, Write-Only)
 - `0xC001`: Video Ink Color Register
 - `0xC002`: Video Background Color Register
 

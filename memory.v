@@ -40,35 +40,37 @@ module memory(
     // Output wires from physical memory blocks
     wire [7:0] rom_out;
     wire [7:0] ram_out;
+    wire [7:0] gfx_ram_out;
 
     // Write enables for specific memory blocks
-    wire we_ram  = ram_we && (mar >= 16'h2000 && mar <= 16'h3FFF);
+    wire we_ram  = ram_we && (mar >= 16'h1800 && mar <= 16'h3FFF); // 10KB Program RAM
     wire we_gfx  = ram_we && (mar >= 16'h4000 && mar <= 16'h67FF); // 0x4000 to 0x67FF for 10KB space
     wire we_txt  = ram_we && (mar >= 16'hA000 && mar <= 16'hAFFF);
-    wire we_font = ram_we && (mar >= 16'hB000 && mar <= 16'hB7FF);
+    wire we_font = ram_we && (mar >= 16'hB000 && mar <= 16'hB7FF); // 2KB Font space
 
     // -------------------------------------------------------------------------
     // Instantiations of Generic Block RAM Modules
     // -------------------------------------------------------------------------
-    block_rom #(.ADDR_WIDTH(11), .INIT_FILE("program.hex")) rom_inst (
+    block_rom #(.ADDR_WIDTH(11), .INIT_FILE("")) rom_inst (
         .clk(clk), .addr(mar[10:0]), .q(rom_out)
     );
 
-    block_ram #(.ADDR_WIDTH(13)) ram_inst (
-        .clk(clk), .we(we_ram), .addr(mar[12:0]), .d(bus[7:0]), .q(ram_out)
+    wire [13:0] ram_addr = mar[13:0] - 14'h1800;
+    block_ram #(.ADDR_WIDTH(14), .DEPTH(10240)) ram_inst (
+        .clk(clk), .we(we_ram), .addr(ram_addr), .d(bus[7:0]), .q(ram_out)
     );
 
-    block_ram_sdp #(.ADDR_WIDTH(14), .DEPTH(10240), .INIT_FILE("")) gfx_ram_inst (
-        .clk(clk), .we_a(we_gfx), .addr_a(mar[13:0]), .d_a(bus[7:0]),
-        .addr_b(vga_gfx_addr), .q_b(vga_gfx_data)
+    vga_shared_tdp_ram #(.ADDR_WIDTH(14), .DEPTH(9600), .INIT_FILE("graph_ram.hex")) gfx_ram_inst (
+        .clk(clk), .we_a(we_gfx), .addr_a(mar[13:0]), .d_a(bus[7:0]), .q_a(gfx_ram_out),
+        .addr_b(vga_gfx_addr[13:0]), .q_b(vga_gfx_data)
     );
 
-    block_ram_sdp #(.ADDR_WIDTH(12), .INIT_FILE("")) txt_ram_inst (
+    vga_shared_ram #(.ADDR_WIDTH(12), .DEPTH(2400), .INIT_FILE("")) txt_ram_inst (
         .clk(clk), .we_a(we_txt), .addr_a(mar[11:0]), .d_a(bus[7:0]),
         .addr_b(vga_txt_addr), .q_b(vga_txt_data)
     );
 
-    block_ram_sdp #(.ADDR_WIDTH(11), .INIT_FILE("font_rom.hex")) font_ram_inst (
+    vga_shared_ram #(.ADDR_WIDTH(11), .INIT_FILE("font_rom.hex")) font_ram_inst (
         .clk(clk), .we_a(we_font), .addr_a(mar[10:0]), .d_a(bus[7:0]),
         .addr_b(vga_font_addr), .q_b(vga_font_data)
     );
@@ -102,8 +104,10 @@ module memory(
     always @(*) begin
         if (mar_d1 <= 16'h07FF)
             out = rom_out;
-        else if (mar_d1 >= 16'h2000 && mar_d1 <= 16'h3FFF)
+        else if (mar_d1 >= 16'h1800 && mar_d1 <= 16'h3FFF)
             out = ram_out;
+        else if (mar_d1 >= 16'h4000 && mar_d1 <= 16'h67FF)
+            out = gfx_ram_out;
         else if (mar_d1 == 16'hC001)
             out = ink_color;
         else if (mar_d1 == 16'hC002)
@@ -112,6 +116,31 @@ module memory(
             out = 8'h00; // Default out for unmapped or write-only video RAM regions
     end
 
+endmodule
+
+// True Dual-Port Video RAM (Port A = CPU Read/Write, Port B = VGA Read-Only)
+module vga_shared_tdp_ram #(
+    parameter ADDR_WIDTH = 13,
+    parameter DEPTH = (1 << ADDR_WIDTH),
+    parameter INIT_FILE = ""
+)(
+    input  wire                  clk,
+    input  wire                  we_a,
+    input  wire [ADDR_WIDTH-1:0] addr_a,
+    input  wire [7:0]            d_a,
+    output reg  [7:0]            q_a,
+    input  wire [ADDR_WIDTH-1:0] addr_b,
+    output reg  [7:0]            q_b
+);
+    (* ram_init_file = INIT_FILE, ramstyle = "no_rw_check" *)
+    reg [7:0] ram [0:DEPTH-1];
+    always @(posedge clk) begin
+        if (we_a) ram[addr_a] <= d_a;
+        q_a <= ram[addr_a];
+    end
+    always @(posedge clk) begin
+        q_b <= ram[addr_b];
+    end
 endmodule
 
 // -----------------------------------------------------------------------------
@@ -138,7 +167,8 @@ endmodule
 
 // Single-Port RAM
 module block_ram #(
-    parameter ADDR_WIDTH = 13
+    parameter ADDR_WIDTH = 13,
+    parameter DEPTH = (1 << ADDR_WIDTH)
 )(
     input  wire                  clk,
     input  wire                  we,
@@ -146,15 +176,15 @@ module block_ram #(
     input  wire [7:0]            d,
     output reg  [7:0]            q
 );
-    reg [7:0] ram [0:(1<<ADDR_WIDTH)-1];
+    reg [7:0] ram [0:DEPTH-1];
     always @(posedge clk) begin
         if (we) ram[addr] <= d;
         q <= ram[addr];
     end
 endmodule
 
-// Simple Dual-Port RAM (Port A = Write-Only, Port B = Read-Only)
-module block_ram_sdp #(
+// Shared Video RAM (Port A = CPU Write-Only, Port B = VGA Read-Only)
+module vga_shared_ram #(
     parameter ADDR_WIDTH = 13,
     parameter DEPTH = (1 << ADDR_WIDTH),
     parameter INIT_FILE = ""
@@ -166,7 +196,7 @@ module block_ram_sdp #(
     input  wire [ADDR_WIDTH-1:0] addr_b,
     output reg  [7:0]            q_b
 );
-    (* ram_init_file = INIT_FILE *)
+    (* ram_init_file = INIT_FILE, ramstyle = "no_rw_check" *)
     reg [7:0] ram [0:DEPTH-1];
     always @(posedge clk) begin
         if (we_a) ram[addr_a] <= d_a;
