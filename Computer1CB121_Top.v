@@ -105,6 +105,7 @@ wire[7:0] alu_out;
 // Output port signals
 wire oar_we;
 wire out_we;
+wire in_oe;
 
 // PS/2 keyboard signals
 wire [7:0] ps2_scan_code;
@@ -120,6 +121,34 @@ assign rst = ~RESET_N;           // Convert active-low to active-high reset
 
 assign LEDR = port_out[7:0];     // Connect LEDs to output port
 
+// PS/2 Keyboard Latch
+reg [7:0] kb_data;
+reg       kb_ready;
+
+always @(posedge clk_25m or posedge rst) begin
+    if (rst) begin
+        kb_data <= 8'b0;
+        kb_ready <= 1'b0;
+    end else begin
+        if (ps2_scan_code_ready) begin
+            kb_data <= ps2_scan_code;
+            kb_ready <= 1'b1;
+        end else if (in_oe && oar_addr == 8'h00) begin
+            kb_ready <= 1'b0;
+        end
+    end
+end
+
+// Input ports multiplexer
+reg [7:0] in_port_data;
+always @(*) begin
+    case (oar_addr)
+        8'h00: in_port_data = kb_data;
+        8'h01: in_port_data = {7'b0, kb_ready};
+        default: in_port_data = 8'h00;
+    endcase
+end
+
 // Bus multiplexing logic: only one component drives the bus at a time
 always @(*) begin
 	bus = 16'b0;
@@ -132,6 +161,8 @@ always @(*) begin
 		bus = {8'b0, alu_out};   // ALU drives bus
 	else if (alu_flags_oe)
 		bus = {8'b0, alu_flags}; // ALU flags drive bus
+	else if (in_oe)
+		bus = {8'b0, in_port_data}; // Input ports drive bus
 end
 
 // Output port latch for I/O operations
@@ -239,6 +270,7 @@ controller controller(
 	.opcode(ir_out),
 	.flags(alu_flags),
 	.out({
+		in_oe,
 		oar_we,
 		out_we,
 		hlt,

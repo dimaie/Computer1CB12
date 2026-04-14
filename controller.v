@@ -13,7 +13,7 @@
  * - flags: 8-bit processor flags (Z, C, P, S)
  *
  * Outputs:
- * - out: 34-bit control word containing all control signals
+ * - out: 35-bit control word containing all control signals
  */
 
 module controller(
@@ -21,10 +21,11 @@ module controller(
 	input rst,
 	input[7:0] opcode,
 	input[7:0] flags,
-	output[33:0] out
+	output[34:0] out
 );
 
 // Control word bit positions
+localparam IN_OE         = 34;  // Input Port Output Enable
 localparam OAR_WE        = 33;  // Output Address Register Write Enable
 localparam OUT_WE        = 32;  // Output Write Enable
 localparam HLT           = 31;  // Halt signal
@@ -83,7 +84,7 @@ localparam REG_SP_P  = 5'b01011;  // SP low byte
 
 parameter MEM_WAIT_CYCLES = 2; // Configurable wait states for memory operations
 
-reg[33:0] ctrl_word;  // Control word register
+reg[34:0] ctrl_word;  // Control word register
 reg[3:0] stage;       // Current execution stage
 reg stage_rst;        // Stage reset signal
 
@@ -980,6 +981,25 @@ always @(*) begin
 					ctrl_word[OUT_WE] = 1'b1;
 				end else if (stage == 6) begin
 					// Increment PC counter
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_PC;
+					ctrl_word[REG_EXT1:REG_EXT0] = REG_INC;
+					stage_rst = 1'b1;
+				end
+			end
+
+			// IN - Input from I/O port to accumulator
+			8'o333: begin
+				if (stage == 3) begin
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC;
+					ctrl_word[REG_OE] = 1'b1;
+					ctrl_word[MEM_MAR_WE] = 1'b1;
+				end else if (stage == 4) begin
+					ctrl_word[MEM_OE] = 1'b1;
+					ctrl_word[OAR_WE] = 1'b1;
+				end else if (stage == 5) begin
+					ctrl_word[IN_OE] = 1'b1;
+					ctrl_word[ALU_A_WE] = 1'b1;
+				end else if (stage == 6) begin
 					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_PC;
 					ctrl_word[REG_EXT1:REG_EXT0] = REG_INC;
 					stage_rst = 1'b1;

@@ -120,7 +120,7 @@ always @(posedge clk, posedge rst) begin
 				end
 				// Compare operation
 				OP_CMP: begin
-					act <= acc - tmp;
+					{carry, act} <= acc - tmp; // Use 9-bit subtraction to capture the borrow!
 				end
 				// Rotate operations
 				OP_RLC: begin
@@ -184,9 +184,12 @@ always @(negedge clk, posedge rst) begin
 					flg[FLG_P] <= flg_p;
 				end
 
-				// Update zero flag for compare
+				// Update flags for compare
 				OP_CMP: begin
+					flg[FLG_C] <= flg_c;
 					flg[FLG_Z] <= (act == 8'b0);
+					flg[FLG_S] <= act[7];
+					flg[FLG_P] <= ~^act[7:0];
 				end
 
 				// Update flags for increment/decrement (no carry)
