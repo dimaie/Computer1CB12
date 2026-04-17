@@ -25,9 +25,9 @@ module Computer1CB121_Top(
 	input 		          		PS2_CLK,     // PS/2 Keyboard Clock
 	input 		          		PS2_DAT,     // PS/2 Keyboard Data
 
-	//////////// UART //////////
-	output		          		UART_TXD,    // UART Transmit Data
-	input 		          		UART_RXD,    // UART Receive Data
+	//////////// DB9 / UART Ports //////////
+	input 		          		UART_RXD,    // DB9 1# Pin 2
+	output		          		UART_TXD,    // DB9 1# Pin 3
 
 	//////////// VGA //////////
 	output		          		VGA_HSYNC,
@@ -139,12 +139,32 @@ always @(posedge clk_25m or posedge rst) begin
     end
 end
 
+// UART RX Latch
+reg [7:0] uart_data_in;
+reg       uart_ready;
+
+always @(posedge clk_25m or posedge rst) begin
+    if (rst) begin
+        uart_data_in <= 8'b0;
+        uart_ready <= 1'b0;
+    end else begin
+        if (uart_rx_done) begin
+            uart_data_in <= uart_rx_data;
+            uart_ready <= 1'b1;
+        end else if (in_oe && oar_addr == 8'h02) begin
+            uart_ready <= 1'b0;
+        end
+    end
+end
+
 // Input ports multiplexer
 reg [7:0] in_port_data;
 always @(*) begin
     case (oar_addr)
         8'h00: in_port_data = kb_data;
         8'h01: in_port_data = {7'b0, kb_ready};
+        8'h02: in_port_data = uart_data_in;
+        8'h03: in_port_data = {6'b0, uart_ready, uart_tx_busy};
         default: in_port_data = 8'h00;
     endcase
 end
@@ -305,7 +325,7 @@ ps2_keyboard ps2_keyboard_inst(
 	.scan_code_ready(ps2_scan_code_ready)
 );
 
-// UART Interface (Hardware loop from PS/2 to UART TX)
+// UART Interface
 uart #(
 	.CLOCKS_PER_BIT(219) // 25.175MHz / 115200 baud
 ) uart_inst (
@@ -313,8 +333,8 @@ uart #(
 	.rst(rst),
 	.rx(UART_RXD),
 	.tx(UART_TXD),
-	.tx_data(ps2_scan_code),         // Transmit the keyboard scan code directly
-	.tx_we(ps2_scan_code_ready),     // Trigger transmission when a new byte is ready
+	.tx_data(bus[7:0]),              // Transmit data from CPU bus
+	.tx_we(out_we && oar_addr == 8'h02), // Trigger transmission on OUT 0x02
 	.tx_busy(uart_tx_busy),
 	.rx_data(uart_rx_data),
 	.rx_done(uart_rx_done)

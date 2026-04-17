@@ -6,6 +6,8 @@
 TXT_RAM   EQU 0A000h
 KB_DATA   EQU 00h
 KB_STATUS EQU 01h
+UART_DATA   EQU 02h
+UART_STATUS EQU 03h
 
     ORG 0000h
     LXI SP, 3FFFh
@@ -30,12 +32,18 @@ Clear_Txt:
     ; Set starting cursor position
     LXI H, TXT_RAM
     
-Poll_KB:
+Poll_Loop:
     IN KB_STATUS
     ANI 01h
-    JZ Poll_KB
+    JNZ Process_KB
     
-    ; Key received!
+    IN UART_STATUS
+    ANI 02h         ; Check bit 1 (uart_ready)
+    JNZ Process_UART
+    
+    JMP Poll_Loop
+    
+Process_KB:
     IN KB_DATA
     MOV B, A
     
@@ -43,6 +51,7 @@ Poll_KB:
     RRC \ RRC \ RRC \ RRC
     ANI 0Fh
     CALL HexToChar
+    CALL SerialTx
     MOV M, A
     INX H
     
@@ -50,14 +59,23 @@ Poll_KB:
     MOV A, B
     ANI 0Fh
     CALL HexToChar
+    CALL SerialTx
     MOV M, A
     INX H
     
     ; Add space separator
-    MVI M, 20h
+    MVI A, 20h
+    CALL SerialTx
+    MOV M, A
     INX H
     
-    JMP Poll_KB
+    JMP Poll_Loop
+
+Process_UART:
+    IN UART_DATA
+    MOV M, A
+    INX H
+    JMP Poll_Loop
 
 HexToChar:
     CPI 0Ah
@@ -65,4 +83,15 @@ HexToChar:
     ADI 07h
 IsDigit:
     ADI 30h
+    RET
+
+; Waits for the UART to be ready, then transmits character in A
+SerialTx:
+    PUSH PSW
+TxWait:
+    IN UART_STATUS
+    ANI 01h         ; Check bit 0 (tx_busy)
+    JNZ TxWait      ; Loop while UART is busy (1)
+    POP PSW
+    OUT UART_DATA
     RET

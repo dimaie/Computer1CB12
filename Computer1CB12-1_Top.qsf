@@ -30,7 +30,7 @@ set_location_assignment PIN_153 -to RESET_N
 set_location_assignment PIN_68 -to PS2_CLK
 set_location_assignment PIN_67 -to PS2_DAT
 
-# UART (Mapped to 1# DB9 Port)
+# UART Ports
 set_location_assignment PIN_2 -to UART_RXD
 set_location_assignment PIN_3 -to UART_TXD
 
