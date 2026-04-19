@@ -1,9 +1,10 @@
 ; =========================================================================
-; SAP-3 System Monitor - Iteration 3
+; SAP-3 System Monitor - Iteration 4
 ; - Keyboard PS/2 Scan Code Decoding
 ; - Line Buffering
 ; - Echoing and Backspace Support
 ; - Command Parser: Dxxxx (Dump Memory)
+; - Command Parser: Mxxxx (Modify Memory)
 ; =========================================================================
 
 ORG 0x0000
@@ -19,6 +20,7 @@ VAR_CURSOR_PTR: DS 2
 VAR_KB_STATE:   DS 1
 VAR_INPUT_LEN:  DS 1
 VAR_INPUT_BUF:  DS 64
+VAR_MODIFY_PTR: DS 2
 
 ; ---------------------------------------------------------
 ; Main Program
@@ -52,62 +54,7 @@ MAIN_LOOP:
     MVI A, '>'
     CALL PRINT_CHAR
     
-    ; Clear Input Buffer Length
-    MVI A, 0
-    STA VAR_INPUT_LEN
-
-INPUT_LOOP:
-    CALL GET_KEY        ; Wait for key, return ASCII in A
-    
-    CPI 0x0D            ; Is it Enter?
-    JZ HANDLE_ENTER
-    
-    CPI 0x08            ; Is it Backspace?
-    JZ HANDLE_BS
-    
-    CPI 0x20            ; Is it Printable? (< 0x20 are control chars)
-    JC INPUT_LOOP
-    CPI 0x7F            ; DEL or higher are non-printable
-    JNC INPUT_LOOP
-    
-    ; --- Handle Printable Character ---
-    MOV B, A            ; Save character
-    
-    ; Check if buffer is full (max 60 chars to leave margin)
-    LDA VAR_INPUT_LEN
-    CPI 60
-    JNC INPUT_LOOP      ; If full, ignore
-    
-    ; Store character in buffer
-    MOV E, A            ; E = length
-    MVI D, 0            ; DE = length
-    LXI H, VAR_INPUT_BUF
-    DAD D               ; HL = VAR_INPUT_BUF + length
-    MOV M, B            ; Store char
-    
-    ; Increment length
-    LDA VAR_INPUT_LEN
-    INR A
-    STA VAR_INPUT_LEN
-    
-    ; Echo to screen
-    MOV A, B
-    CALL PRINT_CHAR
-    JMP INPUT_LOOP
-
-HANDLE_BS:
-    LDA VAR_INPUT_LEN
-    ORA A               ; Is length 0?
-    JZ INPUT_LOOP       ; Yes, do nothing (protects the prompt from deletion)
-    
-    DCR A               ; Decrease length
-    STA VAR_INPUT_LEN
-    
-    CALL BACKSPACE      ; Move cursor back and erase
-    JMP INPUT_LOOP
-
-HANDLE_ENTER:
-    CALL NEW_LINE
+    CALL READ_LINE
     
     LDA VAR_INPUT_LEN
     ORA A               ; Is length 0?
@@ -118,6 +65,8 @@ HANDLE_ENTER:
     MOV A, M
     CPI 'D'
     JZ CMD_DUMP
+    CPI 'M'
+    JZ CMD_MODIFY
     
 CMD_ERROR:
     MVI A, '?'
@@ -126,11 +75,8 @@ CMD_ERROR:
     JMP MAIN_LOOP
 
 CMD_DUMP:
-    LDA VAR_INPUT_LEN
-    CPI 5               ; Expect exactly 'D' + 4 hex chars
-    JNZ CMD_ERROR
-    
     LXI H, VAR_INPUT_BUF + 1
+    CALL SKIP_SPACES
     CALL PARSE_HEX_WORD
     JC CMD_ERROR        ; Invalid hex characters
     
@@ -159,6 +105,118 @@ DUMP_BYTE_LOOP:
     JNZ DUMP_LINE_LOOP
     
     JMP MAIN_LOOP
+
+CMD_MODIFY:
+    LXI H, VAR_INPUT_BUF + 1
+    CALL SKIP_SPACES
+    CALL PARSE_HEX_WORD
+    JC CMD_ERROR        ; Invalid hex characters
+    
+    SHLD VAR_MODIFY_PTR
+    
+MODIFY_PROMPT:
+    LHLD VAR_MODIFY_PTR
+    MOV A, H
+    CALL PRINT_HEX_BYTE
+    MOV A, L
+    CALL PRINT_HEX_BYTE
+    MVI A, ':'
+    CALL PRINT_CHAR
+    
+    MOV A, M
+    CALL PRINT_HEX_BYTE
+    MVI A, ':'
+    CALL PRINT_CHAR
+    
+    CALL READ_LINE
+    
+    LDA VAR_INPUT_LEN
+    ORA A
+    JZ MAIN_LOOP        ; Empty input, return to prompt
+    
+    LXI H, VAR_INPUT_BUF
+    CALL SKIP_SPACES
+    CALL PARSE_HEX_BYTE
+    JC MAIN_LOOP        ; If invalid hex, return to prompt
+    
+    ; Valid byte in A. Write to memory
+    MOV B, A
+    LHLD VAR_MODIFY_PTR
+    MOV M, B
+    
+    ; Increment pointer and repeat
+    INX H
+    SHLD VAR_MODIFY_PTR
+    JMP MODIFY_PROMPT
+
+; ---------------------------------------------------------
+; Subroutine: READ_LINE
+; Reads a line of text into VAR_INPUT_BUF, handles backspace/echo
+; ---------------------------------------------------------
+READ_LINE:
+    ; Clear Input Buffer Length
+    MVI A, 0
+    STA VAR_INPUT_LEN
+RL_LOOP:
+    CALL GET_KEY        ; Wait for key, return ASCII in A
+    
+    CPI 0x0D            ; Is it Enter?
+    JZ RL_ENTER
+    
+    CPI 0x08            ; Is it Backspace?
+    JZ RL_BS
+    
+    CPI 0x20            ; Is it Printable? (< 0x20 are control chars)
+    JC RL_LOOP
+    CPI 0x7F            ; DEL or higher are non-printable
+    JNC RL_LOOP
+    
+    ; --- Handle Printable Character ---
+    MOV B, A            ; Save character
+    
+    ; Check if buffer is full (max 60 chars to leave margin)
+    LDA VAR_INPUT_LEN
+    CPI 60
+    JNC RL_LOOP         ; If full, ignore
+    
+    ; Store character in buffer
+    MOV E, A            ; E = length
+    MVI D, 0            ; DE = length
+    LXI H, VAR_INPUT_BUF
+    DAD D               ; HL = VAR_INPUT_BUF + length
+    MOV M, B            ; Store char
+    
+    ; Increment length
+    LDA VAR_INPUT_LEN
+    INR A
+    STA VAR_INPUT_LEN
+    
+    ; Echo to screen
+    MOV A, B
+    CALL PRINT_CHAR
+    JMP RL_LOOP
+
+RL_BS:
+    LDA VAR_INPUT_LEN
+    ORA A               ; Is length 0?
+    JZ RL_LOOP          ; Yes, do nothing
+    
+    DCR A               ; Decrease length
+    STA VAR_INPUT_LEN
+    
+    CALL BACKSPACE      ; Move cursor back and erase
+    JMP RL_LOOP
+
+RL_ENTER:
+    ; Null-terminate the buffer
+    LDA VAR_INPUT_LEN
+    MOV E, A
+    MVI D, 0
+    LXI H, VAR_INPUT_BUF
+    DAD D
+    MVI M, 0
+    CALL NEW_LINE
+    RET
 
 ; ---------------------------------------------------------
 ; Subroutine: GET_KEY
@@ -245,6 +303,33 @@ PHN_DIGIT:
     ADI 0x30        ; ASCII '0'
     CALL PRINT_CHAR
     POP PSW
+    RET
+
+SKIP_SPACES:
+    MOV A, M
+    CPI ' '
+    RNZ
+    INX H
+    JMP SKIP_SPACES
+
+PARSE_HEX_BYTE:
+    ; Reads 2 hex chars from [HL], returns byte in A. Sets Carry if invalid.
+    MOV A, M
+    CALL PARSE_HEX_NIBBLE
+    JC PHB_ERROR
+    RLC
+    RLC
+    RLC
+    RLC
+    MOV B, A
+    INX H
+    MOV A, M
+    CALL PARSE_HEX_NIBBLE
+    JC PHB_ERROR
+    ORA B
+    RET
+PHB_ERROR:
+    STC
     RET
 
 PARSE_HEX_WORD:
