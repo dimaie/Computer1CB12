@@ -24,6 +24,9 @@ module display_controller(
     input  wire [1:0]  layer_enable,
     input  wire [7:0]  ink_color,
     input  wire [7:0]  bg_color,
+    input  wire [6:0]  cursor_x,
+    input  wire [4:0]  cursor_y,
+    input  wire [1:0]  cursor_style,
     
     // Physical VGA Pins
     output reg         vga_hsync,
@@ -49,18 +52,22 @@ module display_controller(
     // Screen Coordinate Counters
     reg [9:0] x_cnt;
     reg [9:0] y_cnt;
+    reg [5:0] blink_cnt; // 64-frame counter for ~1Hz blink cycle
 
     always @(posedge clk) begin
         if (rst) begin
             x_cnt <= 0;
             y_cnt <= 0;
+            blink_cnt <= 0;
         end else begin
             if (x_cnt == H_TOTAL - 1) begin
                 x_cnt <= 0;
-                if (y_cnt == V_TOTAL - 1)
+                if (y_cnt == V_TOTAL - 1) begin
                     y_cnt <= 0;
-                else
+                    blink_cnt <= blink_cnt + 1'b1; // Increment once per frame
+                end else begin
                     y_cnt <= y_cnt + 1'b1;
+                end
             end else begin
                 x_cnt <= x_cnt + 1'b1;
             end
@@ -94,9 +101,16 @@ module display_controller(
     assign vga_font_addr = {vga_txt_data[7:0], y_fetch_f[3:1]};
 
     // Stage 4/5 -> Final Extraction and Video Mixer
-    wire text_pixel    = vga_font_data[ 3'd7 - x_cnt[2:0] ]; // MSB is drawn left-most
+    wire raw_text_pixel = vga_font_data[ 3'd7 - x_cnt[2:0] ]; // MSB is drawn left-most
     wire gfx_pixel     = vga_gfx_data[ 3'd7 - x_cnt[3:1] ];  // MSB is drawn left-most
     wire in_gfx_bounds = 1'b1; // Full screen
+    
+    // Hardware Cursor Logic: XOR the text pixel if we are over the cursor cell and the blink timer is high
+    wire in_cursor_cell = (x_cnt[9:3] == cursor_x) && (y_cnt[8:4] == cursor_y);
+    wire cursor_shape_active = (cursor_style == 2'd2) || 
+                               (cursor_style == 2'd1 && y_cnt[3] == 1'b1);
+    wire show_cursor    = in_cursor_cell && cursor_shape_active && blink_cnt[5] && (cursor_style != 2'd0);
+    wire text_pixel     = raw_text_pixel ^ show_cursor;
 
     // Layer [1] = Graphics, Layer [0] = Text
     wire draw_ink = (layer_enable[0] && text_pixel) || (layer_enable[1] && in_gfx_bounds && gfx_pixel);

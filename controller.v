@@ -261,7 +261,7 @@ always @(*) begin
 				if (stage == 3) begin
 					if (opcode[5:3] == 3'b111) begin
 						ctrl_word[ALU_CS] = 1'b1;
-						ctrl_word[ALU_OP4:ALU_OP0] = 5'b10000;
+						ctrl_word[ALU_OP4:ALU_OP0] = {4'b1000, opcode[0]};
 						stage_rst = 1'b1;
 					end else begin
 						ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = {2'b0, opcode[5:3]};
@@ -308,9 +308,7 @@ always @(*) begin
 				if (stage == 3) begin
 					// Load source register into ALU temp
 					if (opcode[2:0] == 3'b111) begin
-						ctrl_word[ALU_CS] = 1'b1;
-						ctrl_word[ALU_OP4:ALU_OP0] = {2'b0, opcode[5:3]};
-						stage_rst = 1'b1;
+						ctrl_word[ALU_OE] = 1'b1;
 					end else begin
 						ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = {2'b0, opcode[2:0]};
 						ctrl_word[REG_OE] = 1'b1;
@@ -544,11 +542,11 @@ always @(*) begin
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 10) begin
 					if (opcode[3] == 1'b0) begin
-						ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL_H;
+						ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL_L;
 						ctrl_word[REG_OE] = 1'b1;
 						ctrl_word[MEM_WE] = 1'b1;
 					end else begin
-						ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_HL_H;
+						ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_HL_L;
 						ctrl_word[REG_WE] = 1'b1;
 						ctrl_word[MEM_OE] = 1'b1;
 					end
@@ -561,11 +559,11 @@ always @(*) begin
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 13) begin
 					if (opcode[3] == 1'b0) begin
-						ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL_L;
+						ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL_H;
 						ctrl_word[REG_OE] = 1'b1;
 						ctrl_word[MEM_WE] = 1'b1;
 					end else begin
-						ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_HL_L;
+						ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_HL_H;
 						ctrl_word[REG_WE] = 1'b1;
 						ctrl_word[MEM_OE] = 1'b1;
 					end

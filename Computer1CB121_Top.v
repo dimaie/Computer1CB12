@@ -84,6 +84,9 @@ wire [10:0] vga_font_addr;
 wire [7:0]  vga_font_data;
 wire [7:0]  ink_color;
 wire [7:0]  bg_color;
+wire [6:0]  cursor_x;
+wire [4:0]  cursor_y;
+wire [1:0]  cursor_style;
 
 // Instruction register interface signals
 wire ir_we;
@@ -256,7 +259,10 @@ memory memory(
 	.vga_font_addr(vga_font_addr),
 	.vga_font_data(vga_font_data),
 	.ink_color(ink_color),
-	.bg_color(bg_color)
+	.bg_color(bg_color),
+	.cursor_x(cursor_x),
+	.cursor_y(cursor_y),
+	.cursor_style(cursor_style)
 );
 
 // Instruction Register: holds current instruction opcode
@@ -353,6 +359,9 @@ display_controller vga_ctrl(
 	.layer_enable(2'b11), // Both layers enabled by default
 	.ink_color(ink_color),
 	.bg_color(bg_color),
+	.cursor_x(cursor_x),
+	.cursor_y(cursor_y),
+	.cursor_style(cursor_style),
 	.vga_hsync(VGA_HSYNC),
 	.vga_vsync(VGA_VSYNC),
 	.vga_r(VGA_R),

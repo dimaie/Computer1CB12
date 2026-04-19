@@ -29,9 +29,26 @@ The hardware is based on the OneChipBook laptop. `OneChipBook12-TechRef.pdf` is 
 - `0xB000` - `0xB7FF`: 2KB Video Font RAM (8x8 character fonts, 256 chars, Write-Only)
 - `0xC001`: Video Ink Color Register
 - `0xC002`: Video Background Color Register
+- `0xC003`: Cursor X Position Register (0-79)
+- `0xC004`: Cursor Y Position Register (0-29)
+- `0xC005`: Cursor Style Register (0=Hidden, 1=Half, 2=Full)
 
 ## Architecture Notes
 - The external board reset (`RESET_N`) is active-low, but it is inverted to an active-high `rst` signal at the top level (`Computer1CB12-1_Top.v`). All sub-modules should assume `rst` is active-high.
 - Memory is initialized from a `program.hex` hex file.
 - The ALU evaluates arithmetic/logic operations on the positive clock edge but updates processor flags (Z, C, P, S) on the negative clock edge.
 - Video Mixer Logic: The VGA display pipeline reads both Text and Graphics RAM simultaneously. Text pixels are overlaid transparently on top of graphics pixels, eliminating the need for a dedicated video mode register.
+
+## System Monitor (ROM) Specification
+A ROM-based system monitor program is being developed gradually to provide basic debugging, execution, and API functionalities.
+
+### Core APIs
+- **Keyboard Input:** Routines to gracefully read and buffer characters from the PS/2 keyboard.
+- **Display Output:** Routines to render characters and strings to the VGA Text RAM, handling the cursor and line wrapping.
+
+### Monitor Commands
+- `Dxxxx[,yyyy]` - **Dump Memory:** Displays the memory contents starting at hex address `xxxx`. If `yyyy` is provided, dumps the range up to `yyyy`.
+- `Mxxxx` - **Modify Memory:** Displays the current byte at hex address `xxxx` and prompts for input. If a valid hex value is entered, writes it to the address. If empty/invalid, leaves the cell unmodified.
+- `X` - **Examine/Modify Registers:** Iterates through the CPU registers one by one, displaying their current values and prompting for new input to overwrite them.
+- `R` - **Receive Data:** Accepts binary data via the COM-port (UART RX) and loads it directly into memory. (Detailed protocol specification pending).
+- `Gxxxx` - **Go:** Transfers execution control (jumps) to the program located at hex address `xxxx`.

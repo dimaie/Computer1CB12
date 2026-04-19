@@ -28,7 +28,10 @@ module memory(
     
     // Video Control Registers
     output reg  [7:0]  ink_color,
-    output reg  [7:0]  bg_color
+    output reg  [7:0]  bg_color,
+    output reg  [6:0]  cursor_x,
+    output reg  [4:0]  cursor_y,
+    output reg  [1:0]  cursor_style
 );
 
     // Memory Address Register (MAR)
@@ -81,6 +84,9 @@ module memory(
             mar_d1     <= 16'b0;
             ink_color  <= 8'hFF; // Default White
             bg_color   <= 8'h00; // Default Black
+            cursor_x   <= 7'd0;  // Default Col 0
+            cursor_y   <= 5'd0;  // Default Row 0
+            cursor_style <= 2'd2;  // Default Full Cursor
         end else begin
             if (mar_we) begin
                 mar <= bus;
@@ -90,10 +96,13 @@ module memory(
             mar_d1 <= mar;
             
             // Register Write Decoding
-            if (ram_we && mar >= 16'hC000 && mar <= 16'hC002) begin
-                case (mar[1:0])
-                    2'b01: ink_color  <= bus[7:0];
-                    2'b10: bg_color   <= bus[7:0];
+            if (ram_we && mar >= 16'hC001 && mar <= 16'hC005) begin
+                case (mar[2:0])
+                    3'b001: ink_color    <= bus[7:0]; // 0xC001
+                    3'b010: bg_color     <= bus[7:0]; // 0xC002
+                    3'b011: cursor_x     <= bus[6:0]; // 0xC003
+                    3'b100: cursor_y     <= bus[4:0]; // 0xC004
+                    3'b101: cursor_style <= bus[1:0]; // 0xC005
                 endcase
             end
         end
@@ -111,6 +120,12 @@ module memory(
             out = ink_color;
         else if (mar_d1 == 16'hC002)
             out = bg_color;
+        else if (mar_d1 == 16'hC003)
+            out = {1'b0, cursor_x};
+        else if (mar_d1 == 16'hC004)
+            out = {3'b0, cursor_y};
+        else if (mar_d1 == 16'hC005)
+            out = {6'b0, cursor_style};
         else
             out = 8'h00; // Default out for unmapped or write-only video RAM regions
     end

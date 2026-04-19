@@ -1,1 +1,180 @@
-31 FF 3F 21 00 A0 11 60 09 36 00 23 1B 7A B3 C2 09 00 3E 1C 32 01 C0 3E 00 32 02 C0 21 00 A0 DB 01 E6 01 C2 30 00 DB 03 E6 02 C2 56 00 C3 1F 00 DB 00 47 0F 0F 0F 0F E6 0F CD 5D 00 CD 67 00 77 23 78 E6 0F CD 5D 00 CD 67 00 77 23 3E 20 CD 67 00 77 23 C3 1F 00 DB 02 77 23 C3 1F 00 FE 0A DA 64 00 C6 07 C6 30 C9 F5 DB 03 E6 01 C2 68 00 F1 D3 02 C9
+@0000       // Start at address 0x0000
+C3 10 00    // JMP START
+
+@0010       // Start at address 0x0010
+31 FF 3F    // LXI SP, 0x3FFF      ; Initialize Stack Pointer
+CD 05 01    // CALL CLEAR_SCREEN
+3E 00       // MVI A, 0
+32 00 20    // STA VAR_CURSOR_X
+32 01 20    // STA VAR_CURSOR_Y
+21 00 A0    // LXI H, 0xA000
+22 02 20    // SHLD VAR_CURSOR_PTR
+3E 02       // MVI A, 2
+32 05 C0    // STA 0xC005
+CD 67 01    // CALL SYNC_CURSOR
+3E 00       // MVI A, 0
+32 04 20    // STA VAR_KB_STATE
+3E 2D       // MVI A, '-'
+CD 15 01    // CALL PRINT_CHAR
+3E 3E       // MVI A, '>'
+CD 15 01    // CALL PRINT_CHAR
+3E 00       // MVI A, 0
+32 05 20    // STA VAR_INPUT_LEN
+CD 95 00    // CALL GET_KEY        ; Wait for key, return ASCII in A
+FE 0D       // CPI 0x0D            ; Is it Enter?
+CA 87 00    // JZ HANDLE_ENTER
+FE 08       // CPI 0x08            ; Is it Backspace?
+CA 76 00    // JZ HANDLE_BS
+FE 20       // CPI 0x20            ; Is it Printable? (< 0x20 are control chars)
+DA 40 00    // JC INPUT_LOOP
+FE 7F       // CPI 0x7F            ; DEL or higher are non-printable
+D2 40 00    // JNC INPUT_LOOP
+47          // MOV B, A            ; Save character
+3A 05 20    // LDA VAR_INPUT_LEN
+FE 3C       // CPI 60
+D2 40 00    // JNC INPUT_LOOP      ; If full, ignore
+5F          // MOV E, A            ; E = length
+16 00       // MVI D, 0            ; DE = length
+21 06 20    // LXI H, VAR_INPUT_BUF
+19          // DAD D               ; HL = VAR_INPUT_BUF + length
+70          // MOV M, B            ; Store char
+3A 05 20    // LDA VAR_INPUT_LEN
+3C          // INR A
+32 05 20    // STA VAR_INPUT_LEN
+78          // MOV A, B
+CD 15 01    // CALL PRINT_CHAR
+C3 40 00    // JMP INPUT_LOOP
+3A 05 20    // LDA VAR_INPUT_LEN
+B7          // ORA A               ; Is length 0?
+CA 40 00    // JZ INPUT_LOOP       ; Yes, do nothing (protects the prompt from deletion)
+3D          // DCR A               ; Decrease length
+32 05 20    // STA VAR_INPUT_LEN
+CD D3 00    // CALL BACKSPACE      ; Move cursor back and erase
+C3 40 00    // JMP INPUT_LOOP
+CD 37 01    // CALL NEW_LINE
+3E 3F       // MVI A, '?'
+CD 15 01    // CALL PRINT_CHAR
+CD 37 01    // CALL NEW_LINE
+C3 31 00    // JMP MAIN_LOOP
+DB 01       // IN 0x01
+E6 01       // ANI 0x01
+CA 95 00    // JZ GK_WAIT
+DB 00       // IN 0x00
+FE E0       // CPI 0xE0            ; Ignore extended prefix
+CA 95 00    // JZ GK_WAIT
+FE F0       // CPI 0xF0            ; Is it a Break code?
+C2 B0 00    // JNZ GK_CHECK_STATE
+3E 01       // MVI A, 1
+32 04 20    // STA VAR_KB_STATE
+C3 95 00    // JMP GK_WAIT
+47          // MOV B, A            ; Save scan code
+3A 04 20    // LDA VAR_KB_STATE
+B7          // ORA A
+CA C0 00    // JZ GK_DECODE        ; If state is 0, normal MAKE code
+3E 00       // MVI A, 0
+32 04 20    // STA VAR_KB_STATE
+C3 95 00    // JMP GK_WAIT
+78          // MOV A, B            ; Restore scan code
+FE 80       // CPI 0x80            ; Ensure it's < 128 to prevent table overflow
+D2 95 00    // JNC GK_WAIT
+21 76 01    // LXI H, SCAN_TO_ASCII
+5F          // MOV E, A
+16 00       // MVI D, 0
+19          // DAD D               ; HL = SCAN_TO_ASCII + Scan Code
+7E          // MOV A, M            ; Load ASCII value
+B7          // ORA A               ; Is it mapped to 0 (unknown)?
+CA 95 00    // JZ GK_WAIT
+C9          // RET                 ; Valid ASCII in A!
+3A 01 20    // LDA VAR_CURSOR_Y
+47          // MOV B, A
+3A 00 20    // LDA VAR_CURSOR_X
+B0          // ORA B
+CA 04 01    // JZ BS_DONE
+3A 00 20    // LDA VAR_CURSOR_X
+B7          // ORA A
+C2 F4 00    // JNZ BS_DEC_X
+3E 4F       // MVI A, 79
+32 00 20    // STA VAR_CURSOR_X
+3A 01 20    // LDA VAR_CURSOR_Y
+3D          // DCR A
+32 01 20    // STA VAR_CURSOR_Y
+C3 F8 00    // JMP BS_UPDATE_PTR
+3D          // DCR A
+32 00 20    // STA VAR_CURSOR_X
+2A 02 20    // LHLD VAR_CURSOR_PTR
+2B          // DCX H
+22 02 20    // SHLD VAR_CURSOR_PTR
+36 20       // MVI M, 0x20
+CD 67 01    // CALL SYNC_CURSOR
+C9          // RET
+21 00 A0    // LXI H, 0xA000
+01 60 09    // LXI B, 2400         ; 80 columns * 30 rows = 2400 bytes
+36 20       // MVI M, 0x20         ; Space character
+23          // INX H
+0B          // DCX B
+78          // MOV A, B
+B1          // ORA C
+C2 0B 01    // JNZ CS_LOOP
+C9          // RET
+E5          // PUSH H
+F5          // PUSH PSW
+2A 02 20    // LHLD VAR_CURSOR_PTR
+77          // MOV M, A
+23          // INX H
+22 02 20    // SHLD VAR_CURSOR_PTR
+3A 00 20    // LDA VAR_CURSOR_X
+3C          // INR A
+FE 50       // CPI 80              ; Check if we hit the end of the line (80 cols)
+DA 2E 01    // JC PC_NO_WRAP
+CD 37 01    // CALL NEW_LINE
+C3 34 01    // JMP PC_DONE
+32 00 20    // STA VAR_CURSOR_X
+CD 67 01    // CALL SYNC_CURSOR
+F1          // POP PSW
+E1          // POP H
+C9          // RET
+E5          // PUSH H
+D5          // PUSH D
+F5          // PUSH PSW
+3E 00       // MVI A, 0
+32 00 20    // STA VAR_CURSOR_X
+3A 01 20    // LDA VAR_CURSOR_Y
+3C          // INR A
+FE 1E       // CPI 30              ; Check if we hit the bottom of the screen
+DA 4A 01    // JC NL_NO_WRAP
+3E 00       // MVI A, 0            ; For now, just wrap back to the top of the screen
+32 01 20    // STA VAR_CURSOR_Y
+6F          // MOV L, A
+26 00       // MVI H, 0
+29          // DAD H               ; HL = Y * 2
+29          // DAD H               ; HL = Y * 4
+29          // DAD H               ; HL = Y * 8
+29          // DAD H               ; HL = Y * 16
+5D          // MOV E, L
+54          // MOV D, H            ; DE = Y * 16
+29          // DAD H               ; HL = Y * 32
+29          // DAD H               ; HL = Y * 64
+19          // DAD D               ; HL = Y * 80
+11 00 A0    // LXI D, 0xA000
+19          // DAD D               ; HL = 0xA000 + Y * 80
+22 02 20    // SHLD VAR_CURSOR_PTR
+CD 67 01    // CALL SYNC_CURSOR
+F1          // POP PSW
+D1          // POP D
+E1          // POP H
+C9          // RET
+F5          // PUSH PSW
+3A 00 20    // LDA VAR_CURSOR_X
+32 03 C0    // STA 0xC003          ; Cursor X Register
+3A 01 20    // LDA VAR_CURSOR_Y
+32 04 C0    // STA 0xC004          ; Cursor Y Register
+F1          // POP PSW
+C9          // RET
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 60 00 // DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x00 ; 00-0F
+00 00 00 00 00 51 31 00 00 00 5A 53 41 57 32 00 // DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x51, 0x31, 0x00, 0x00, 0x00, 0x5A, 0x53, 0x41, 0x57, 0x32, 0x00 ; 10-1F
+00 43 58 44 45 34 33 00 00 20 56 46 54 52 35 00 // DB  0x00, 0x43, 0x58, 0x44, 0x45, 0x34, 0x33, 0x00, 0x00, 0x20, 0x56, 0x46, 0x54, 0x52, 0x35, 0x00 ; 20-2F
+00 4E 42 48 47 59 36 00 00 00 4D 4A 55 37 38 00 // DB  0x00, 0x4E, 0x42, 0x48, 0x47, 0x59, 0x36, 0x00, 0x00, 0x00, 0x4D, 0x4A, 0x55, 0x37, 0x38, 0x00 ; 30-3F
+00 2C 4B 49 4F 30 39 00 00 2E 2F 4C 3B 50 2D 00 // DB  0x00, 0x2C, 0x4B, 0x49, 0x4F, 0x30, 0x39, 0x00, 0x00, 0x2E, 0x2F, 0x4C, 0x3B, 0x50, 0x2D, 0x00 ; 40-4F
+00 00 27 00 5B 3D 00 00 00 00 0D 5D 00 5C 00 00 // DB  0x00, 0x00, 0x27, 0x00, 0x5B, 0x3D, 0x00, 0x00, 0x00, 0x00, 0x0D, 0x5D, 0x00, 0x5C, 0x00, 0x00 ; 50-5F
+00 00 00 00 00 00 08 00 00 00 00 00 00 00 00 00 // DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ; 60-6F
+00 00 00 00 00 00 1B 00 00 00 00 00 00 00 00 00 // DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ; 70-7F

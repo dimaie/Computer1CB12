@@ -152,6 +152,110 @@ module tb_cpu;
         // Assert Conditions: Memory array at offset 5 (0x2005) should equal 0x55
         assert_val("RAM[0x2005]", uut.memory.ram_inst.ram[5], 8'h55);
         
+        // ---------------------------------------------------------
+        // TEST 4: Evaluate SBB A (ALU op with Accumulator as source)
+        // ---------------------------------------------------------
+        setup_test("SBB A (Sign Extension Trick)");
+        write_op(16'h0000, 8'h3E); // MVI A, 0x05
+        write_op(16'h0001, 8'h05); 
+        write_op(16'h0002, 8'h37); // STC (Set Carry = 1)
+        write_op(16'h0003, 8'h9F); // SBB A
+        write_op(16'h0004, 8'h76); // HLT
+        execute_and_wait();
+        
+        // Assert Conditions: 5 - 5 - 1 = -1 (0xFF)
+        assert_val("Register A after SBB A", uut.alu.acc, 8'hFF);
+
+        // ---------------------------------------------------------
+        // TEST 5: Evaluate ORA M
+        // ---------------------------------------------------------
+        setup_test("ORA M (Read-Modify-Write Accumulator)");
+        write_op(16'h0000, 8'h21); // LXI H, 0x200A
+        write_op(16'h0001, 8'h0A); 
+        write_op(16'h0002, 8'h20); 
+        write_op(16'h0003, 8'h36); // MVI M, 0x0F
+        write_op(16'h0004, 8'h0F); 
+        write_op(16'h0005, 8'h3E); // MVI A, 0xF0
+        write_op(16'h0006, 8'hF0); 
+        write_op(16'h0007, 8'hB6); // ORA M
+        write_op(16'h0008, 8'h76); // HLT
+        execute_and_wait();
+        
+        // Assert Conditions: 0xF0 | 0x0F = 0xFF
+        assert_val("Register A after ORA M", uut.alu.acc, 8'hFF);
+
+        // ---------------------------------------------------------
+        // TEST 6: Evaluate ACI (Add with Carry Immediate)
+        // ---------------------------------------------------------
+        setup_test("ACI (Add with Carry Immediate)");
+        write_op(16'h0000, 8'h3E); // MVI A, 0x12
+        write_op(16'h0001, 8'h12); 
+        write_op(16'h0002, 8'h37); // STC (Set Carry = 1)
+        write_op(16'h0003, 8'hCE); // ACI 0x40
+        write_op(16'h0004, 8'h40); 
+        write_op(16'h0005, 8'h76); // HLT
+        execute_and_wait();
+        
+        // Assert Conditions: 0x12 + 0x40 + 1 = 0x53
+        assert_val("Register A after ACI", uut.alu.acc, 8'h53);
+
+        // ---------------------------------------------------------
+        // TEST 7: Evaluate ADD L
+        // ---------------------------------------------------------
+        setup_test("ADD L");
+        write_op(16'h0000, 8'h3E); // MVI A, 0x0C
+        write_op(16'h0001, 8'h0C); 
+        write_op(16'h0002, 8'h2E); // MVI L, 0xC0
+        write_op(16'h0003, 8'hC0); 
+        write_op(16'h0004, 8'h85); // ADD L
+        write_op(16'h0005, 8'h76); // HLT
+        execute_and_wait();
+        
+        // Assert Conditions: 0x0C + 0xC0 = 0xCC
+        assert_val("Register A after ADD L", uut.alu.acc, 8'hCC);
+
+        // ---------------------------------------------------------
+        // TEST 8: Evaluate ANI
+        // ---------------------------------------------------------
+        setup_test("ANI (AND Immediate)");
+        write_op(16'h0000, 8'h3E); // MVI A, 0x8C
+        write_op(16'h0001, 8'h8C); 
+        write_op(16'h0002, 8'hE6); // ANI 0x1F
+        write_op(16'h0003, 8'h1F); 
+        write_op(16'h0004, 8'h76); // HLT
+        execute_and_wait();
+        
+        // Assert Conditions: 0x8C & 0x1F = 0x0C
+        assert_val("Register A after ANI", uut.alu.acc, 8'h0C);
+
+        // ---------------------------------------------------------
+        // TEST 9: DRAW_PIXEL Address Math Sequence
+        // ---------------------------------------------------------
+        setup_test("DRAW_PIXEL Address Math Sequence");
+        write_op(16'h0000, 8'h26); // MVI H, 0x12
+        write_op(16'h0001, 8'h12); 
+        write_op(16'h0002, 8'h2E); // MVI L, 0xC0
+        write_op(16'h0003, 8'hC0); 
+        write_op(16'h0004, 8'h3E); // MVI A, 0x0C
+        write_op(16'h0005, 8'h0C); 
+        
+        write_op(16'h0006, 8'h85); // ADD L     (A = A + L)
+        write_op(16'h0007, 8'h6F); // MOV L, A  (L = A)
+        write_op(16'h0008, 8'h7C); // MOV A, H  (A = H)
+        write_op(16'h0009, 8'hCE); // ACI 0x40  (A = A + 0x40 + C)
+        write_op(16'h000A, 8'h40); // <--- MISSING IMMEDIATE DATA BYTE
+        write_op(16'h000B, 8'h67); // MOV H, A  (H = A)
+        
+        write_op(16'h000C, 8'h22); // SHLD 0x2000 (Stores L at 2000, H at 2001)
+        write_op(16'h000D, 8'h00); 
+        write_op(16'h000E, 8'h20); 
+        write_op(16'h000F, 8'h76); // HLT
+        execute_and_wait();
+        
+        // Assert Conditions: HL should be 0x52CC
+        assert_val("RAM[0x2000] (Expected L = CC)", uut.memory.ram_inst.ram[0], 8'hCC);
+        assert_val("RAM[0x2001] (Expected H = 52)", uut.memory.ram_inst.ram[1], 8'h52);
+
         $display("\n==================================================");
         $display(" ALL TESTS COMPLETED.");
         $display("==================================================");
