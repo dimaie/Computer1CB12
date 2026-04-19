@@ -1,8 +1,9 @@
 ; =========================================================================
-; SAP-3 System Monitor - Iteration 2
+; SAP-3 System Monitor - Iteration 3
 ; - Keyboard PS/2 Scan Code Decoding
 ; - Line Buffering
 ; - Echoing and Backspace Support
+; - Command Parser: Dxxxx (Dump Memory)
 ; =========================================================================
 
 ORG 0x0000
@@ -107,10 +108,56 @@ HANDLE_BS:
 
 HANDLE_ENTER:
     CALL NEW_LINE
-    ; For now, just print "?" to simulate unknown command, then loop
+    
+    LDA VAR_INPUT_LEN
+    ORA A               ; Is length 0?
+    JZ MAIN_LOOP        ; If empty, just print new prompt
+    
+    ; Read first character
+    LXI H, VAR_INPUT_BUF
+    MOV A, M
+    CPI 'D'
+    JZ CMD_DUMP
+    
+CMD_ERROR:
     MVI A, '?'
     CALL PRINT_CHAR
     CALL NEW_LINE
+    JMP MAIN_LOOP
+
+CMD_DUMP:
+    LDA VAR_INPUT_LEN
+    CPI 5               ; Expect exactly 'D' + 4 hex chars
+    JNZ CMD_ERROR
+    
+    LXI H, VAR_INPUT_BUF + 1
+    CALL PARSE_HEX_WORD
+    JC CMD_ERROR        ; Invalid hex characters
+    
+    ; HL now contains the starting address. Dump 32 bytes (2x16 lines)
+    MVI B, 2
+DUMP_LINE_LOOP:
+    MOV A, H
+    CALL PRINT_HEX_BYTE
+    MOV A, L
+    CALL PRINT_HEX_BYTE
+    MVI A, ':'
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    
+    MVI C, 16
+DUMP_BYTE_LOOP:
+    MOV A, M
+    CALL PRINT_HEX_BYTE
+    CALL PRINT_SPACE
+    INX H
+    DCR C
+    JNZ DUMP_BYTE_LOOP
+    
+    CALL NEW_LINE
+    DCR B
+    JNZ DUMP_LINE_LOOP
+    
     JMP MAIN_LOOP
 
 ; ---------------------------------------------------------
@@ -166,6 +213,101 @@ GK_DECODE:
     JZ GK_WAIT
     
     RET                 ; Valid ASCII in A!
+
+; ---------------------------------------------------------
+; String and Hex Utility Subroutines
+; ---------------------------------------------------------
+PRINT_SPACE:
+    PUSH PSW
+    MVI A, ' '
+    CALL PRINT_CHAR
+    POP PSW
+    RET
+
+PRINT_HEX_BYTE:
+    PUSH PSW
+    RRC
+    RRC
+    RRC
+    RRC
+    CALL PRINT_HEX_NIBBLE
+    POP PSW
+    CALL PRINT_HEX_NIBBLE
+    RET
+
+PRINT_HEX_NIBBLE:
+    PUSH PSW
+    ANI 0x0F
+    CPI 10
+    JC PHN_DIGIT
+    ADI 7           ; Offset for 'A'-'F'
+PHN_DIGIT:
+    ADI 0x30        ; ASCII '0'
+    CALL PRINT_CHAR
+    POP PSW
+    RET
+
+PARSE_HEX_WORD:
+    ; Reads 4 hex chars from [HL], returns word in HL. Sets Carry if invalid.
+    PUSH B
+    PUSH D
+    MVI D, 0
+    MVI E, 0
+    MVI B, 4        ; 4 digits
+PHW_LOOP:
+    MOV A, M
+    CALL PARSE_HEX_NIBBLE
+    JC PHW_ERROR
+    
+    PUSH H          ; Save pointer
+    MOV H, D        ; Shift DE left by 4
+    MOV L, E
+    DAD H
+    DAD H
+    DAD H
+    DAD H
+    MOV D, H
+    MOV E, L
+    POP H           ; Restore pointer
+    
+    ORA E           ; Add new nibble to E
+    MOV E, A
+    
+    INX H           ; Next char
+    DCR B
+    JNZ PHW_LOOP
+    
+    MOV H, D        ; Move result to HL
+    MOV L, E
+    ORA A           ; Clear carry (success)
+    POP D
+    POP B
+    RET
+PHW_ERROR:
+    STC             ; Set carry (error)
+    POP D
+    POP B
+    RET
+
+PARSE_HEX_NIBBLE:
+    CPI '0'
+    JC PHN_ERR
+    CPI '9' + 1
+    JC PHN_NUM
+    CPI 'A'
+    JC PHN_ERR
+    CPI 'F' + 1
+    JNC PHN_ERR
+    SUI 55          ; 'A' (65) - 55 = 10
+    ORA A
+    RET
+PHN_NUM:
+    SUI '0'
+    ORA A
+    RET
+PHN_ERR:
+    STC
+    RET
 
 ; ---------------------------------------------------------
 ; Subroutine: BACKSPACE
