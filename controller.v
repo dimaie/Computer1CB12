@@ -777,7 +777,7 @@ always @(*) begin
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 11) begin
-					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_C;
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_P;
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_WE] = 1'b1;
 				end else if (stage == 12) begin
@@ -788,7 +788,7 @@ always @(*) begin
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 14) begin
-					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_P;
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_C;
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_WE] = 1'b1;
 				end else if (stage == 15) begin
@@ -832,7 +832,7 @@ always @(*) begin
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 11) begin
-					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_C;
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_P;
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_WE] = 1'b1;
 				end else if (stage == 12) begin
@@ -843,7 +843,7 @@ always @(*) begin
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 14) begin
-					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_P;
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_PC_C;
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_WE] = 1'b1;
 				end else if (stage == 15) begin
@@ -868,7 +868,7 @@ always @(*) begin
 						ctrl_word[MEM_MAR_WE] = 1'b1;
 					end
 				end else if (stage == 4) begin
-					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_W;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_Z;
 					ctrl_word[REG_WE] = 1'b1;
 					ctrl_word[MEM_OE] = 1'b1;
 				end else if (stage == 5) begin
@@ -879,7 +879,7 @@ always @(*) begin
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 7) begin
-					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_Z;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_W;
 					ctrl_word[REG_WE] = 1'b1;
 					ctrl_word[MEM_OE] = 1'b1;
 				end else if (stage == 8) begin
@@ -901,7 +901,7 @@ always @(*) begin
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 4) begin
-					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_W;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_Z;
 					ctrl_word[REG_WE] = 1'b1;
 					ctrl_word[MEM_OE] = 1'b1;
 				end else if (stage == 5) begin
@@ -912,7 +912,7 @@ always @(*) begin
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[MEM_MAR_WE] = 1'b1;
 				end else if (stage == 7) begin
-					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_Z;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ_W;
 					ctrl_word[REG_WE] = 1'b1;
 					ctrl_word[MEM_OE] = 1'b1;
 				end else if (stage == 8) begin
