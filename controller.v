@@ -230,7 +230,7 @@ always @(*) begin
 
 			// INR/DCR M - Increment/Decrement memory location pointed by HL
 			// opcode[0] - Operation: 0=Increment (INR), 1=Decrement (DCR)
-			8'o064: begin
+			8'o064, 8'o065: begin
 				if (stage == 3) begin
 					// Set memory address to HL register value
 					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL;
@@ -662,6 +662,38 @@ always @(*) begin
 					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL;
 					ctrl_word[REG_OE] = 1'b1;
 					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_PC;
+					ctrl_word[REG_WE] = 1'b1;
+					stage_rst = 1'b1;
+				end
+			end
+
+			// XCHG - Exchange DE and HL
+			8'o353: begin
+				if (stage == 3) begin
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL;
+					ctrl_word[REG_OE] = 1'b1;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_WZ;
+					ctrl_word[REG_WE] = 1'b1;
+				end else if (stage == 4) begin
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_DE;
+					ctrl_word[REG_OE] = 1'b1;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_HL;
+					ctrl_word[REG_WE] = 1'b1;
+				end else if (stage == 5) begin
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_WZ;
+					ctrl_word[REG_OE] = 1'b1;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_DE;
+					ctrl_word[REG_WE] = 1'b1;
+					stage_rst = 1'b1;
+				end
+			end
+
+			// SPHL - Load Stack Pointer with HL
+			8'o371: begin
+				if (stage == 3) begin
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL;
+					ctrl_word[REG_OE] = 1'b1;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_SP;
 					ctrl_word[REG_WE] = 1'b1;
 					stage_rst = 1'b1;
 				end
