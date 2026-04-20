@@ -5,6 +5,8 @@
 ; - Echoing and Backspace Support
 ; - Command Parser: Dxxxx (Dump Memory)
 ; - Command Parser: Mxxxx (Modify Memory)
+; - Command Parser: Gxxxx (Go / Execute)
+; - Command Parser: X     (Examine Registers)
 ; =========================================================================
 
 ORG 0x0000
@@ -21,6 +23,8 @@ VAR_KB_STATE:   DS 1
 VAR_INPUT_LEN:  DS 1
 VAR_INPUT_BUF:  DS 64
 VAR_MODIFY_PTR: DS 2
+VAR_REG_NAME_PTR: DS 2
+VAR_REGS:       DS 12   ; AF, BC, DE, HL, SP, PC (16-bit pairs)
 
 ; ---------------------------------------------------------
 ; Main Program
@@ -29,14 +33,11 @@ ORG 0x0010
 START:
     LXI SP, 0x3FFF      ; Initialize Stack Pointer
     
-    CALL CLEAR_SCREEN
+    ; Initialize User SP in VAR_REGS to 0x3FFF
+    LXI H, 0x3FFF
+    SHLD VAR_REGS + 8
     
-    ; Initialize Cursor Variables
-    MVI A, 0
-    STA VAR_CURSOR_X
-    STA VAR_CURSOR_Y
-    LXI H, 0xA000
-    SHLD VAR_CURSOR_PTR
+    CALL CLEAR_SCREEN
     
     ; Set Hardware Cursor Style (2 = Full Block)
     MVI A, 2
@@ -67,6 +68,10 @@ MAIN_LOOP:
     JZ CMD_DUMP
     CPI 'M'
     JZ CMD_MODIFY
+    CPI 'G'
+    JZ CMD_GO
+    CPI 'X'
+    JZ CMD_EXAMINE
     
 CMD_ERROR:
     MVI A, '?'
@@ -148,6 +153,111 @@ MODIFY_PROMPT:
     INX H
     SHLD VAR_MODIFY_PTR
     JMP MODIFY_PROMPT
+
+CMD_GO:
+    LDA VAR_INPUT_LEN
+    CPI 1               ; Was it just "G" without address?
+    JZ GO_EXECUTE
+    
+    LXI H, VAR_INPUT_BUF + 1
+    CALL SKIP_SPACES
+    CALL PARSE_HEX_WORD
+    JC CMD_ERROR        ; Invalid hex characters
+    
+    ; Store parsed address into VAR_REGS PC
+    SHLD VAR_REGS + 10
+    
+GO_EXECUTE:
+    ; Context Switch Trampoline
+    LHLD VAR_REGS + 8   ; Load User's SP
+    SPHL                ; SP = User's SP
+    
+    LXI H, MAIN_LOOP
+    PUSH H              ; Push monitor return address onto user's stack
+    
+    LHLD VAR_REGS + 10  ; PC
+    PUSH H
+    LHLD VAR_REGS + 0   ; AF
+    PUSH H
+    LHLD VAR_REGS + 2   ; BC
+    PUSH H
+    LHLD VAR_REGS + 4   ; DE
+    PUSH H
+    LHLD VAR_REGS + 6   ; HL
+    PUSH H
+    
+    POP H
+    POP D
+    POP B
+    POP PSW
+    
+    RET                 ; Pops PC and jumps to user program!
+
+CMD_EXAMINE:
+    LXI H, VAR_REGS
+    SHLD VAR_MODIFY_PTR
+    LXI H, REG_NAMES
+    SHLD VAR_REG_NAME_PTR
+
+EXAMINE_PROMPT:
+    LHLD VAR_REG_NAME_PTR
+    MOV A, M
+    ORA A
+    JZ MAIN_LOOP        ; Null terminator means end of list
+    
+    CALL PRINT_CHAR     ; First letter of pair
+    INX H
+    MOV A, M
+    CALL PRINT_CHAR     ; Second letter of pair
+    INX H
+    SHLD VAR_REG_NAME_PTR
+    
+    MVI A, '='
+    CALL PRINT_CHAR
+    
+    LHLD VAR_MODIFY_PTR
+    MOV E, M            ; Low byte
+    INX H
+    MOV D, M            ; High byte
+    INX H
+    PUSH H              ; Save pointer to NEXT register pair
+    
+    MOV A, D
+    CALL PRINT_HEX_BYTE ; Print High byte
+    MOV A, E
+    CALL PRINT_HEX_BYTE ; Print Low byte
+    
+    MVI A, ':'
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    
+    CALL READ_LINE
+    
+    LDA VAR_INPUT_LEN
+    ORA A
+    JZ EXAMINE_NEXT     ; Empty input, skip to next pair
+    
+    LXI H, VAR_INPUT_BUF
+    CALL SKIP_SPACES
+    CALL PARSE_HEX_WORD
+    JC EXAMINE_ERR      ; If parse fails, output error
+    
+    ; Store new 16-bit value in memory (Little-Endian)
+    XCHG                ; DE = parsed new value
+    LHLD VAR_MODIFY_PTR
+    MOV M, E            ; Store Low byte
+    INX H
+    MOV M, D            ; Store High byte
+    JMP EXAMINE_NEXT
+
+EXAMINE_ERR:
+    POP H               ; Restore stack before throwing error
+    JMP CMD_ERROR
+
+EXAMINE_NEXT:
+    POP H               ; Restore pointer to next register pair
+    SHLD VAR_MODIFY_PTR
+    JMP EXAMINE_PROMPT
 
 ; ---------------------------------------------------------
 ; Subroutine: READ_LINE
@@ -450,6 +560,14 @@ CS_LOOP:
     MOV A, B
     ORA C
     JNZ CS_LOOP
+    
+    ; Reset Cursor Variables to top-left (Home)
+    MVI A, 0
+    STA VAR_CURSOR_X
+    STA VAR_CURSOR_Y
+    LXI H, 0xA000
+    SHLD VAR_CURSOR_PTR
+    CALL SYNC_CURSOR
     RET
 
 ; ---------------------------------------------------------
@@ -558,3 +676,9 @@ SCAN_TO_ASCII:
     DB  0x00, 0x00, 0x27, 0x00, 0x5B, 0x3D, 0x00, 0x00, 0x00, 0x00, 0x0D, 0x5D, 0x00, 0x5C, 0x00, 0x00 ; 50-5F
     DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ; 60-6F
     DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ; 70-7F
+
+; ---------------------------------------------------------
+; Text Constants
+; ---------------------------------------------------------
+REG_NAMES:
+    DB "AFBCDEHLSPPC", 0

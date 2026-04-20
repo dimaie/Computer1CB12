@@ -656,6 +656,17 @@ always @(*) begin
 				end
 			end
 
+			// PCHL - Load Program Counter with HL
+			8'o351: begin
+				if (stage == 3) begin
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_HL;
+					ctrl_word[REG_OE] = 1'b1;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_PC;
+					ctrl_word[REG_WE] = 1'b1;
+					stage_rst = 1'b1;
+				end
+			end
+
 			// Jump Conditional
 			// opcode[5:4] - flag
 			// opcode[3]   - set (1) / unset (0)
