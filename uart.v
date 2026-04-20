@@ -37,6 +37,20 @@ module uart #(
     reg [2:0]  rx_bit_index;
 
     // -------------------------------------------------------------------------
+    // Anti-Metastability Synchronizer for Rx
+    // -------------------------------------------------------------------------
+    reg rx_sync_1, rx_sync;
+    always @(posedge clk) begin
+        if (rst) begin
+            rx_sync_1 <= 1'b1;
+            rx_sync   <= 1'b1;
+        end else begin
+            rx_sync_1 <= rx;
+            rx_sync   <= rx_sync_1;
+        end
+    end
+
+    // -------------------------------------------------------------------------
     // UART Transmitter Logic
     // -------------------------------------------------------------------------
     always @(posedge clk) begin
@@ -123,7 +137,7 @@ module uart #(
                     rx_clk_count <= 0;
                     rx_bit_index <= 0;
                     // Falling edge detected on Rx line (Start bit)
-                    if (rx == 1'b0) begin
+                    if (rx_sync == 1'b0) begin
                         rx_state <= STATE_START;
                     end
                 end
@@ -131,7 +145,7 @@ module uart #(
                 STATE_START: begin
                     // Wait for the middle of the start bit to sample
                     if (rx_clk_count == (CLOCKS_PER_BIT / 2)) begin
-                        if (rx == 1'b0) begin
+                        if (rx_sync == 1'b0) begin
                             rx_clk_count <= 0;
                             rx_state     <= STATE_DATA;
                         end else begin
@@ -148,7 +162,7 @@ module uart #(
                         rx_clk_count <= rx_clk_count + 1'b1;
                     end else begin
                         rx_clk_count          <= 0;
-                        rx_data[rx_bit_index] <= rx;
+                        rx_data[rx_bit_index] <= rx_sync;
                         
                         if (rx_bit_index < 7) begin
                             rx_bit_index <= rx_bit_index + 1'b1;
@@ -160,8 +174,9 @@ module uart #(
                 end
                 
                 STATE_STOP: begin
-                    // Wait for the duration of the stop bit
-                    if (rx_clk_count < CLOCKS_PER_BIT - 1) begin
+                    // Wait for only HALF the stop bit duration.
+                    // This provides maximum framing tolerance for back-to-back bursts!
+                    if (rx_clk_count < (CLOCKS_PER_BIT / 2)) begin
                         rx_clk_count <= rx_clk_count + 1'b1;
                     end else begin
                         rx_done      <= 1'b1;

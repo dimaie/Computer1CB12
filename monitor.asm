@@ -7,6 +7,7 @@
 ; - Command Parser: Mxxxx (Modify Memory)
 ; - Command Parser: Gxxxx (Go / Execute)
 ; - Command Parser: X     (Examine Registers)
+; - Command Parser: R     (Receive UART Payload)
 ; =========================================================================
 
 ORG 0x0000
@@ -72,6 +73,8 @@ MAIN_LOOP:
     JZ CMD_GO
     CPI 'X'
     JZ CMD_EXAMINE
+    CPI 'R'
+    JZ CMD_RECEIVE
     
 CMD_ERROR:
     MVI A, '?'
@@ -259,6 +262,116 @@ EXAMINE_NEXT:
     SHLD VAR_MODIFY_PTR
     JMP EXAMINE_PROMPT
 
+CMD_RECEIVE:
+    LDA VAR_INPUT_LEN
+    CPI 1               ; Ensure command is exactly 'R'
+    JNZ CMD_ERROR
+    
+    CALL NEW_LINE       ; Start on a fresh line for diagnostic output
+    
+FLUSH_RX:
+    IN 0x03
+    ANI 0x02
+    JZ FLUSH_DONE       ; If RX_READY is 0, buffer is clean!
+    IN 0x02             ; If not, read the garbage byte and discard it
+    JMP FLUSH_RX
+FLUSH_DONE:
+    
+    MVI A, 0x06         ; Send ACK to PC to start transmission
+    CALL UART_SEND_BYTE
+    
+    MVI D, 0            ; D will hold our Rolling Checksum
+    
+    ; --- Read 4-Byte Header ---
+    CALL UART_RECV_BYTE
+    MOV E, A            ; E = Addr Low
+    ADD D
+    MOV D, A
+    
+    CALL UART_RECV_BYTE
+    MOV H, A            ; H = Addr High
+    ADD D
+    MOV D, A
+    MOV L, E            ; HL = Target Address
+    
+    CALL UART_RECV_BYTE
+    MOV C, A            ; C = Length Low
+    ADD D
+    MOV D, A
+    
+    CALL UART_RECV_BYTE
+    MOV B, A            ; B = Length High
+    ADD D
+    MOV D, A
+    
+    PUSH B              ; Save original Length for diagnostic summary
+    PUSH H              ; Save original Target Address for diagnostic summary
+    
+    ; Check for 0-length payload
+    MOV A, B
+    ORA C
+    JZ RECV_VERIFY
+    
+    ; --- Receive Payload ---
+RECV_LOOP:
+    CALL UART_RECV_BYTE
+    MOV M, A            ; Store byte to memory
+    ADD D               ; Add to checksum
+    MOV D, A            ; Save checksum
+    
+    ; Diagnostic: Print a '.' every 256 bytes (when C wraps to 0)
+    MOV A, C
+    ORA A
+    JNZ RECV_SKIP_DOT
+    MVI A, '.'
+    CALL PRINT_CHAR
+RECV_SKIP_DOT:
+    
+    INX H               ; Next address
+    DCX B               ; Decrement remaining length
+    MOV A, B
+    ORA C
+    JNZ RECV_LOOP       ; Repeat until BC == 0
+    
+RECV_VERIFY:
+    CALL UART_RECV_BYTE ; Read PC Checksum
+    CMP D               ; Compare with our calculated checksum
+    JNZ RECV_ERROR
+    
+    MVI A, 0x06         ; Send Success ACK
+    CALL UART_SEND_BYTE
+    
+    ; --- Success Summary ---
+    CALL NEW_LINE
+    MVI A, 'O'
+    CALL PRINT_CHAR
+    MVI A, 'K'
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    
+    POP H               ; Restore Target Address
+    MOV A, H
+    CALL PRINT_HEX_BYTE
+    MOV A, L
+    CALL PRINT_HEX_BYTE
+    CALL PRINT_SPACE
+    
+    POP B               ; Restore Length
+    MOV A, B
+    CALL PRINT_HEX_BYTE
+    MOV A, C
+    CALL PRINT_HEX_BYTE
+    
+    CALL NEW_LINE
+    JMP MAIN_LOOP       ; Return quietly to prompt
+    
+RECV_ERROR:
+    POP H               ; Clean up stack (Address)
+    POP B               ; Clean up stack (Length)
+    MVI A, 0x15         ; Send NAK
+    CALL UART_SEND_BYTE
+    JMP CMD_ERROR       ; Print '?' and return to prompt
+
 ; ---------------------------------------------------------
 ; Subroutine: READ_LINE
 ; Reads a line of text into VAR_INPUT_BUF, handles backspace/echo
@@ -381,6 +494,27 @@ GK_DECODE:
     JZ GK_WAIT
     
     RET                 ; Valid ASCII in A!
+
+; ---------------------------------------------------------
+; Subroutines: UART Serial I/O
+; TX_BUSY is Bit 0 of Port 0x03. RX_READY is Bit 1 of Port 0x03.
+; ---------------------------------------------------------
+UART_RECV_BYTE:
+    IN 0x03
+    ANI 0x02            ; Check if RX_READY (Bit 1) is high
+    JZ UART_RECV_BYTE   ; Block until a byte arrives
+    IN 0x02             ; Read byte (this automatically clears the ready flag in hardware)
+    RET
+
+UART_SEND_BYTE:
+    PUSH PSW
+USB_WAIT:
+    IN 0x03
+    ANI 0x01            ; Check if TX_BUSY (Bit 0) is high
+    JNZ USB_WAIT        ; Block while UART is transmitting
+    POP PSW
+    OUT 0x02            ; Transmit byte
+    RET
 
 ; ---------------------------------------------------------
 ; String and Hex Utility Subroutines

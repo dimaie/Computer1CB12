@@ -1,20 +1,9 @@
 ; Bresenham Circle Drawing Algorithm for SAP-3 / Intel 8080
 ; Center: (160, 120), Radius: 100
 
-ORG 0x0000          ; Program ROM starts at 0x0000
+ORG 0x3000          ; Load into User RAM via Monitor
 
-JMP START
-
-; Variable storage in Program RAM
-ORG 0x2000
-VAR_X:  DS 1
-VAR_Y:  DS 1
-VAR_D:  DS 2
-
-ORG 0x0010
 START:
-    LXI SP, 0x3FFF  ; Initialize Stack Pointer to top of RAM
-    
     ; Initialize Video Colors
     MVI A, 0x1C     ; Ink color (Bright Green)
     STA 0xC001
@@ -97,7 +86,7 @@ LOOP_NEXT:
     JMP LOOP_START
     
 LOOP_END:
-    JMP LOOP_END    ; Infinite loop to park processor safely without killing VGA sync
+    RET             ; Return to monitor gracefully
     
 ; ---------------------------------------------------------
 ; DRAW_8 - Draws 8 symmetrical points
@@ -284,3 +273,8 @@ APPLY_MASK:
     POP D
     POP H
     RET
+
+; Variable storage appended to form a flat binary
+VAR_X:  DS 1
+VAR_Y:  DS 1
+VAR_D:  DS 2
