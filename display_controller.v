@@ -23,6 +23,7 @@ module display_controller(
     // Control registers
     input  wire [1:0]  layer_enable,
     input  wire [7:0]  ink_color,
+    input  wire [7:0]  gfx_ink_color,
     input  wire [7:0]  bg_color,
     input  wire [6:0]  cursor_x,
     input  wire [4:0]  cursor_y,
@@ -113,8 +114,9 @@ module display_controller(
     wire text_pixel     = raw_text_pixel ^ show_cursor;
 
     // Layer [1] = Graphics, Layer [0] = Text
-    wire draw_ink = (layer_enable[0] && text_pixel) || (layer_enable[1] && in_gfx_bounds && gfx_pixel);
-    wire [7:0] active_color = draw_ink ? ink_color : bg_color;
+    wire draw_txt = (layer_enable[0] && text_pixel);
+    wire draw_gfx = (layer_enable[1] && in_gfx_bounds && gfx_pixel);
+    wire [7:0] active_color = draw_txt ? ink_color : (draw_gfx ? gfx_ink_color : bg_color);
 
     always @(posedge clk) begin
         // Output syncs directly derived from current beam position

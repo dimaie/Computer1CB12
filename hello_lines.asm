@@ -9,6 +9,7 @@
 ; --- Hardware Addresses ---
 VID_INK   EQU 0C001h
 VID_BG    EQU 0C002h
+VID_GFX   EQU 0C006h
 TXT_RAM   EQU 0A000h
 GFX_RAM   EQU 04000h
 
@@ -17,6 +18,9 @@ GFX_RAM   EQU 04000h
 ; =========================================================================
     MVI A, 1Ch          ; Load Bright Green (1Ch)
     STA VID_INK         ; Store to Ink Color Register
+    
+    MVI A, 0E0h         ; Load Red (E0h) for Graphics Layer
+    STA VID_GFX         ; Store to Graphics Color Register
     
     MVI A, 00h          ; Load Black (00h)
     STA VID_BG          ; Store to Background Color Register

@@ -4,12 +4,27 @@
 ORG 0x3000          ; Load into User RAM via Monitor
 
 START:
-    ; Initialize Video Colors
-    MVI A, 0x1C     ; Ink color (Bright Green)
+    ; Initialize Video Colors (Text, Bg, Gfx)
+    MVI A, 0x1C     ; Text Ink color (Bright Green)
     STA 0xC001
     MVI A, 0x00     ; Background color (Black)
     STA 0xC002
+    MVI A, 0x03     ; Graphics Ink color (Bright Blue)
+    STA 0xC006
 
+    ; Print text intersecting the circle
+    LXI D, String_Data
+    LXI H, 0xA4B8   ; Text RAM: Row 15, Col 8 (Left edge of the circle outline)
+PRINT_LOOP:
+    LDAX D
+    CPI 0
+    JZ DRAW_SETUP
+    MOV M, A
+    INX D
+    INX H
+    JMP PRINT_LOOP
+
+DRAW_SETUP:
     MVI A, 0
     STA VAR_X
     MVI A, 100      ; Radius = 100
@@ -278,3 +293,5 @@ APPLY_MASK:
 VAR_X:  DS 1
 VAR_Y:  DS 1
 VAR_D:  DS 2
+
+String_Data: DB "SAP-3 CIRCLE", 0

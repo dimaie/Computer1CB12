@@ -31,7 +31,8 @@ module memory(
     output reg  [7:0]  bg_color,
     output reg  [6:0]  cursor_x,
     output reg  [4:0]  cursor_y,
-    output reg  [1:0]  cursor_style
+    output reg  [1:0]  cursor_style,
+    output reg  [7:0]  gfx_ink_color
 );
 
     // Memory Address Register (MAR)
@@ -88,6 +89,7 @@ module memory(
             cursor_x   <= 7'd0;  // Default Col 0
             cursor_y   <= 5'd0;  // Default Row 0
             cursor_style <= 2'd2;  // Default Full Cursor
+            gfx_ink_color <= 8'hFF; // Default White
         end else begin
             if (mar_we) begin
                 mar <= bus;
@@ -104,6 +106,7 @@ module memory(
                     3'b011: cursor_x     <= bus[6:0]; // 0xC003
                     3'b100: cursor_y     <= bus[4:0]; // 0xC004
                     3'b101: cursor_style <= bus[1:0]; // 0xC005
+                    3'b110: gfx_ink_color <= bus[7:0]; // 0xC006
                 endcase
             end
         end
@@ -129,6 +132,8 @@ module memory(
             out = {3'b0, cursor_y};
         else if (mar_d1 == 16'hC005)
             out = {6'b0, cursor_style};
+        else if (mar_d1 == 16'hC006)
+            out = gfx_ink_color;
         else
             out = 8'h00; // Default out for unmapped or write-only video RAM regions
     end

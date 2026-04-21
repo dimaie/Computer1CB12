@@ -87,6 +87,7 @@ wire [7:0]  bg_color;
 wire [6:0]  cursor_x;
 wire [4:0]  cursor_y;
 wire [1:0]  cursor_style;
+wire [7:0]  gfx_ink_color;
 
 // Instruction register interface signals
 wire ir_we;
@@ -262,7 +263,8 @@ memory memory(
 	.bg_color(bg_color),
 	.cursor_x(cursor_x),
 	.cursor_y(cursor_y),
-	.cursor_style(cursor_style)
+	.cursor_style(cursor_style),
+	.gfx_ink_color(gfx_ink_color)
 );
 
 // Instruction Register: holds current instruction opcode
@@ -362,6 +364,7 @@ display_controller vga_ctrl(
 	.cursor_x(cursor_x),
 	.cursor_y(cursor_y),
 	.cursor_style(cursor_style),
+	.gfx_ink_color(gfx_ink_color),
 	.vga_hsync(VGA_HSYNC),
 	.vga_vsync(VGA_VSYNC),
 	.vga_r(VGA_R),
