@@ -8,10 +8,15 @@
 ; - Command Parser: Gxxxx (Go / Execute)
 ; - Command Parser: X     (Examine Registers)
 ; - Command Parser: R     (Receive UART Payload)
+; - Command Parser: S     (Step Over)
+; - Command Parser: Bxxxx (Breakpoint)
 ; =========================================================================
 
 ORG 0x0000
 JMP START
+
+ORG 0x0008
+JMP BP_HANDLER
 
 ; ---------------------------------------------------------
 ; Variables in Program RAM
@@ -26,6 +31,10 @@ VAR_INPUT_BUF:  DS 64
 VAR_MODIFY_PTR: DS 2
 VAR_REG_NAME_PTR: DS 2
 VAR_REGS:       DS 12   ; AF, BC, DE, HL, SP, PC (16-bit pairs)
+VAR_BP_ACTIVE:  DS 1
+VAR_BP_ADDR:    DS 2
+VAR_BP_BYTES:   DS 3
+VAR_DISASM_PTR: DS 2
 
 ; ---------------------------------------------------------
 ; Main Program
@@ -34,9 +43,18 @@ ORG 0x0010
 START:
     LXI SP, 0x3FFF      ; Initialize Stack Pointer
     
-    ; Initialize User SP in VAR_REGS to 0x3FFF
-    LXI H, 0x3FFF
+    ; Seed the bottom of the User Stack with the Monitor's Return Address
+    LXI H, MAIN_LOOP
+    PUSH H
+    
+    ; Initialize User SP in VAR_REGS to the new bottom (0x3FFD)
+    LXI H, 0
+    DAD SP
     SHLD VAR_REGS + 8
+    
+    ; Clear active breakpoint
+    XRA A
+    STA VAR_BP_ACTIVE
     
     CALL CLEAR_SCREEN
     
@@ -77,6 +95,10 @@ MAIN_LOOP:
     JZ CMD_RECEIVE
     CPI 'U'
     JZ CMD_UNASSEMBLE
+    CPI 'S'
+    JZ CMD_STEP
+    CPI 'B'
+    JZ CMD_BREAKPOINT
     
 CMD_ERROR:
     MVI A, '?'
@@ -176,9 +198,6 @@ GO_EXECUTE:
     ; Context Switch Trampoline
     LHLD VAR_REGS + 8   ; Load User's SP
     SPHL                ; SP = User's SP
-    
-    LXI H, MAIN_LOOP
-    PUSH H              ; Push monitor return address onto user's stack
     
     LHLD VAR_REGS + 10  ; PC
     PUSH H
@@ -375,6 +394,286 @@ RECV_ERROR:
     JMP CMD_ERROR       ; Print '?' and return to prompt
 
 ; ---------------------------------------------------------
+; Commands: Step (S) and Breakpoint (B)
+; ---------------------------------------------------------
+CMD_STEP:
+    ; Disassemble current instruction to find length
+    LHLD VAR_REGS + 10
+    MOV B, M            ; B = opcode
+    PUSH H              ; Save User PC
+    
+    LXI H, DISASM_MAP
+    MOV E, B
+    MVI D, 0
+    DAD D
+    MOV A, M            ; A = Template ID
+    CALL GET_TEMPLATE   ; HL = Template String
+    
+    MVI D, 1            ; Default Length = 1
+S_LEN_LOOP:
+    MOV A, M
+    ORA A
+    JZ S_LEN_DONE
+    INX H
+    CPI 0x86
+    JNZ S_LEN_NOT_2
+    MVI D, 2
+    JMP S_LEN_LOOP
+S_LEN_NOT_2:
+    CPI 0x87
+    JNZ S_LEN_LOOP
+    MVI D, 3
+    JMP S_LEN_LOOP
+S_LEN_DONE:
+    POP H               ; HL = User PC
+    MOV E, D
+    MVI D, 0
+    DAD D               ; HL = Next PC
+    
+    JMP INJECT_BP
+
+CMD_BREAKPOINT:
+    LDA VAR_INPUT_LEN
+    CPI 1
+    JZ BP_CLEAR
+    
+    LXI H, VAR_INPUT_BUF + 1
+    CALL SKIP_SPACES
+    CALL PARSE_HEX_WORD
+    JC CMD_ERROR
+    
+INJECT_BP:
+    ; HL contains the target address for the NEW breakpoint!
+    ; Push it to save it while we clean up any old breakpoints
+    PUSH H
+    
+    ; Clear any old BP first to prevent leaving a stranded CALL in memory
+    LDA VAR_BP_ACTIVE
+    ORA A
+    JZ INJECT_NEW
+    LHLD VAR_BP_ADDR
+    XCHG
+    LXI H, VAR_BP_BYTES
+    MOV A, M
+    STAX D
+    INX H
+    INX D
+    MOV A, M
+    STAX D
+    INX H
+    INX D
+    MOV A, M
+    STAX D
+INJECT_NEW:
+    POP H               ; HL = NEW Breakpoint target
+    SHLD VAR_BP_ADDR
+    
+    ; Save 3 original bytes
+    XCHG                ; DE = BP Addr
+    LXI H, VAR_BP_BYTES
+    LDAX D
+    MOV M, A
+    INX D
+    INX H
+    LDAX D
+    MOV M, A
+    INX D
+    INX H
+    LDAX D
+    MOV M, A
+    
+    ; Inject CALL 0x0008 (CD 08 00)
+    LHLD VAR_BP_ADDR
+    MVI M, 0xCD
+    INX H
+    MVI M, 0x08
+    INX H
+    MVI M, 0x00
+    
+    MVI A, 1
+    STA VAR_BP_ACTIVE
+    
+    ; If this was a Step command, execute immediately
+    LDA VAR_INPUT_BUF
+    CPI 'S'
+    JZ GO_EXECUTE
+    
+    CALL NEW_LINE
+    MVI A, 'B'
+    CALL PRINT_CHAR
+    MVI A, 'P'
+    CALL PRINT_CHAR
+    MVI A, '+'
+    CALL PRINT_CHAR
+    CALL NEW_LINE
+    JMP MAIN_LOOP
+
+BP_CLEAR:
+    LDA VAR_BP_ACTIVE
+    ORA A
+    JZ MAIN_LOOP        ; Was not active
+    LHLD VAR_BP_ADDR
+    XCHG
+    LXI H, VAR_BP_BYTES
+    MOV A, M
+    STAX D
+    INX H
+    INX D
+    MOV A, M
+    STAX D
+    INX H
+    INX D
+    MOV A, M
+    STAX D
+    XRA A
+    STA VAR_BP_ACTIVE
+    CALL NEW_LINE
+    MVI A, 'B'
+    CALL PRINT_CHAR
+    MVI A, 'P'
+    CALL PRINT_CHAR
+    MVI A, '-'
+    CALL PRINT_CHAR
+    CALL NEW_LINE
+    JMP MAIN_LOOP
+
+BP_HANDLER:
+    SHLD VAR_REGS + 6   ; Save User HL
+    POP H               ; Pop Return Address (BP_ADDR + 3)
+    DCX H               ; -1
+    DCX H               ; -2
+    DCX H               ; -3 (Now points to BP_ADDR)
+    SHLD VAR_REGS + 10  ; Save User PC
+    
+    LXI H, 0
+    DAD SP
+    SHLD VAR_REGS + 8   ; Save User SP
+    
+    PUSH PSW
+    POP H
+    SHLD VAR_REGS + 0   ; Save User AF
+    MOV H, B
+    MOV L, C
+    SHLD VAR_REGS + 2   ; Save User BC
+    MOV H, D
+    MOV L, E
+    SHLD VAR_REGS + 4   ; Save User DE
+    
+    LXI SP, 0x3FFF      ; Switch to Monitor Stack
+    
+    ; Restore original bytes implicitly (like BP_CLEAR)
+    LDA VAR_BP_ACTIVE
+    ORA A
+    JZ BP_DONE
+    LHLD VAR_BP_ADDR
+    XCHG
+    LXI H, VAR_BP_BYTES
+    MOV A, M
+    STAX D
+    INX H
+    INX D
+    MOV A, M
+    STAX D
+    INX H
+    INX D
+    MOV A, M
+    STAX D
+    XRA A
+    STA VAR_BP_ACTIVE
+    
+BP_DONE:
+    CALL NEW_LINE
+    MVI A, '['
+    CALL PRINT_CHAR
+    MVI A, 'B'
+    CALL PRINT_CHAR
+    MVI A, 'P'
+    CALL PRINT_CHAR
+    MVI A, ']'
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    
+    LXI H, REG_NAMES
+    LXI D, VAR_REGS
+BP_REG_LOOP:
+    MOV A, M
+    ORA A
+    JZ BP_REG_DONE
+    CALL PRINT_CHAR     ; Print first letter (e.g., 'A')
+    INX H
+    MOV A, M
+    CALL PRINT_CHAR     ; Print second letter (e.g., 'F')
+    INX H
+    MVI A, '='
+    CALL PRINT_CHAR
+    LDAX D              ; Load Low Byte
+    MOV C, A
+    INX D
+    LDAX D              ; Load High Byte
+    MOV B, A
+    INX D               ; Point to next register pair
+    MOV A, B
+    CALL PRINT_HEX_BYTE ; Print High Byte
+    MOV A, C
+    CALL PRINT_HEX_BYTE ; Print Low Byte
+    CALL PRINT_SPACE
+    JMP BP_REG_LOOP
+    
+BP_REG_DONE:
+    MVI A, 'F'
+    CALL PRINT_CHAR
+    MVI A, ':'
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    
+    LDA VAR_REGS + 0  ; Load the F register (Low byte of AF)
+    MOV B, A
+    
+    MVI C, 'S'
+    MVI D, 0x08       ; Mask for Sign Flag (Bit 3)
+    CALL PRINT_FLAG
+    
+    MVI C, 'Z'
+    MVI D, 0x01       ; Mask for Zero Flag (Bit 0)
+    CALL PRINT_FLAG
+    
+    MVI C, 'P'
+    MVI D, 0x04       ; Mask for Parity Flag (Bit 2)
+    CALL PRINT_FLAG
+    
+    MVI C, 'C'
+    MVI D, 0x02       ; Mask for Carry Flag (Bit 1)
+    CALL PRINT_FLAG
+    
+    CALL NEW_LINE
+    
+    ; -- Print "Going to Execute" (PC) --
+    MVI A, '='
+    CALL PRINT_CHAR
+    MVI A, '>'
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    LHLD VAR_REGS + 10
+    CALL DISASM_PRINT_LINE
+    
+    JMP MAIN_LOOP
+
+PRINT_FLAG:
+    MOV A, C
+    CALL PRINT_CHAR
+    MVI A, '='
+    CALL PRINT_CHAR
+    MOV A, B
+    ANA D
+    MVI A, '0'
+    JZ PF_ZERO
+    MVI A, '1'
+PF_ZERO:
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    RET
+
+; ---------------------------------------------------------
 ; Command: Unassemble (Disassembler)
 ; ---------------------------------------------------------
 CMD_UNASSEMBLE:
@@ -395,6 +694,22 @@ U_LINE_LOOP:
     PUSH B              ; Save line counter (C)
     
     LHLD VAR_MODIFY_PTR
+    CALL DISASM_PRINT_LINE
+    SHLD VAR_MODIFY_PTR
+    
+    POP B               ; Restore line counter
+    DCR C
+    JNZ U_LINE_LOOP
+    JMP MAIN_LOOP       ; Back to prompt
+
+; ---------------------------------------------------------
+; Subroutine: DISASM_PRINT_LINE
+; Disassembles and prints one instruction at HL.
+; Returns: HL points to the NEXT instruction.
+; ---------------------------------------------------------
+DISASM_PRINT_LINE:
+    SHLD VAR_DISASM_PTR
+    
     MOV A, H
     CALL PRINT_HEX_BYTE
     MOV A, L
@@ -416,100 +731,100 @@ U_LINE_LOOP:
     
     ; Dry-run scan of the template to determine instruction length (1, 2, or 3 bytes)
     MVI D, 1            ; Default Length = 1
-U_LEN_LOOP:
+DPL_LEN_LOOP:
     MOV A, M
     ORA A
-    JZ U_LEN_DONE
+    JZ DPL_LEN_DONE
     INX H
     CPI 0x86            ; Token 0x86 means 8-bit operand (Length = 2)
-    JNZ U_LEN_NOT_2
+    JNZ DPL_LEN_NOT_2
     MVI D, 2
-    JMP U_LEN_LOOP
-U_LEN_NOT_2:
+    JMP DPL_LEN_LOOP
+DPL_LEN_NOT_2:
     CPI 0x87            ; Token 0x87 means 16-bit operand (Length = 3)
-    JNZ U_LEN_LOOP
+    JNZ DPL_LEN_LOOP
     MVI D, 3
-    JMP U_LEN_LOOP
-U_LEN_DONE:
+    JMP DPL_LEN_LOOP
+DPL_LEN_DONE:
     
     ; Print the raw bytes padded to exact alignment (e.g. "C3 10 30   ")
-    LHLD VAR_MODIFY_PTR
+    LHLD VAR_DISASM_PTR
     MOV E, D            ; E = length
     MVI A, 3            ; Max padding columns
     SUB E
     MOV B, A            ; B = padding required
-U_RAW_LOOP:
+DPL_RAW_LOOP:
     MOV A, M
     CALL PRINT_HEX_BYTE
     CALL PRINT_SPACE
     INX H
     DCR E
-    JNZ U_RAW_LOOP
+    JNZ DPL_RAW_LOOP
     
     MOV A, B
     ORA A
-    JZ U_PAD_DONE
-U_PAD_LOOP:
+    JZ DPL_PAD_DONE
+DPL_PAD_LOOP:
     CALL PRINT_SPACE
     CALL PRINT_SPACE
     CALL PRINT_SPACE
     DCR B
-    JNZ U_PAD_LOOP
-U_PAD_DONE:
+    JNZ DPL_PAD_LOOP
+DPL_PAD_DONE:
     CALL PRINT_SPACE
     
     POP D               ; D = Template String
-    LHLD VAR_MODIFY_PTR
+    LHLD VAR_DISASM_PTR
     MOV C, M            ; C = opcode (for extracting tokens)
     INX H               ; HL = next byte (for extracting d8/d16)
     
-U_PARSE_LOOP:
+DPL_PARSE_LOOP:
     LDAX D
     ORA A
-    JZ U_LINE_DONE
+    JZ DPL_LINE_DONE
     INX D
     
     CPI 0x80
-    JC U_PRINT_LITERAL
+    JC DPL_PRINT_LITERAL
     
     ; Evaluate Formatting Tokens
     CPI 0x81
-    JZ U_TOK_R1
+    JZ DPL_TOK_R1
     CPI 0x82
-    JZ U_TOK_R2
+    JZ DPL_TOK_R2
     CPI 0x83
-    JZ U_TOK_RP
+    JZ DPL_TOK_RP
     CPI 0x84
-    JZ U_TOK_RP2
+    JZ DPL_TOK_RP2
     CPI 0x85
-    JZ U_TOK_CC
+    JZ DPL_TOK_CC
     CPI 0x86
-    JZ U_TOK_D8
+    JZ DPL_TOK_D8
     CPI 0x87
-    JZ U_TOK_D16
+    JZ DPL_TOK_D16
     CPI 0x88
-    JZ U_TOK_RST
+    JZ DPL_TOK_RST
     
-U_PRINT_LITERAL:
+DPL_PRINT_LITERAL:
     CALL PRINT_CHAR
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_R1:
+DPL_TOK_R1:
     MOV A, C
     RRC
     RRC
     RRC
     ANI 0x07
     CALL PRINT_REG_NAME
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_R2:
+DPL_TOK_R2:
     MOV A, C
     ANI 0x07
     CALL PRINT_REG_NAME
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_RP:
+DPL_TOK_RP:
     MOV A, C
     RRC
     RRC
@@ -517,9 +832,9 @@ U_TOK_RP:
     RRC
     ANI 0x03
     CALL PRINT_RP_NAME
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_RP2:
+DPL_TOK_RP2:
     MOV A, C
     RRC
     RRC
@@ -527,26 +842,26 @@ U_TOK_RP2:
     RRC
     ANI 0x03
     CALL PRINT_RP2_NAME
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_CC:
+DPL_TOK_CC:
     MOV A, C
     RRC
     RRC
     RRC
     ANI 0x07
     CALL PRINT_CC_NAME
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_D8:
+DPL_TOK_D8:
     MOV A, M
     CALL PRINT_HEX_BYTE
     MVI A, 'H'
     CALL PRINT_CHAR
     INX H
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_D16:
+DPL_TOK_D16:
     ; 8080 is Little-Endian. Print High Byte first, then Low Byte.
     INX H
     MOV A, M
@@ -558,9 +873,9 @@ U_TOK_D16:
     CALL PRINT_CHAR
     INX H
     INX H
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_TOK_RST:
+DPL_TOK_RST:
     MOV A, C
     RRC
     RRC
@@ -568,19 +883,11 @@ U_TOK_RST:
     ANI 0x07
     ADI '0'
     CALL PRINT_CHAR
-    JMP U_PARSE_LOOP
+    JMP DPL_PARSE_LOOP
     
-U_LINE_DONE:
+DPL_LINE_DONE:
     CALL NEW_LINE
-    
-    ; Safe advancement! HL currently points precisely to the start of the next instruction 
-    ; because the tokens `INX H` exactly the correct amount during evaluation!
-    SHLD VAR_MODIFY_PTR
-    
-    POP B               ; Restore line counter
-    DCR C
-    JNZ U_LINE_LOOP
-    JMP MAIN_LOOP       ; Back to prompt
+    RET
 
 ; --- Disassembler Subroutines ---
 GET_TEMPLATE:

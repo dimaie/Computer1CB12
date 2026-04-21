@@ -26,6 +26,7 @@ module ps2_keyboard(
 
     reg [3:0]  bit_count;
     reg [10:0] shift_reg;
+    reg        ignore_next;
 
     always @(posedge clk) begin
         if (rst) begin
@@ -33,6 +34,7 @@ module ps2_keyboard(
             shift_reg       <= 11'd0;
             scan_code       <= 8'h00;
             scan_code_ready <= 1'b0;
+            ignore_next     <= 1'b0;
         end else begin
             scan_code_ready <= 1'b0; // Default to 0, pulse high for one cycle when done
             
@@ -44,8 +46,14 @@ module ps2_keyboard(
                     bit_count <= 4'd0;
                     // Validate start bit (0) and stop bit (1) before outputting
                     if (shift_reg[1] == 1'b0 && ps2_dat == 1'b1) begin
-                        scan_code       <= shift_reg[9:2];
-                        scan_code_ready <= 1'b1;
+                        if (shift_reg[9:2] == 8'hF0) begin
+                            ignore_next <= 1'b1;
+                        end else if (ignore_next) begin
+                            ignore_next <= 1'b0;
+                        end else begin
+                            scan_code       <= shift_reg[9:2];
+                            scan_code_ready <= 1'b1;
+                        end
                     end
                 end else begin
                     bit_count <= bit_count + 1'b1;
