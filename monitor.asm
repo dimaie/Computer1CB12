@@ -75,6 +75,8 @@ MAIN_LOOP:
     JZ CMD_EXAMINE
     CPI 'R'
     JZ CMD_RECEIVE
+    CPI 'U'
+    JZ CMD_UNASSEMBLE
     
 CMD_ERROR:
     MVI A, '?'
@@ -371,6 +373,301 @@ RECV_ERROR:
     MVI A, 0x15         ; Send NAK
     CALL UART_SEND_BYTE
     JMP CMD_ERROR       ; Print '?' and return to prompt
+
+; ---------------------------------------------------------
+; Command: Unassemble (Disassembler)
+; ---------------------------------------------------------
+CMD_UNASSEMBLE:
+    LDA VAR_INPUT_LEN
+    CPI 1
+    JZ U_PROMPT_LOOP    ; If just "U" was typed, continue from the last address
+    
+    LXI H, VAR_INPUT_BUF + 1
+    CALL SKIP_SPACES
+    CALL PARSE_HEX_WORD
+    JC CMD_ERROR        ; Invalid hex characters
+    SHLD VAR_MODIFY_PTR
+    
+U_PROMPT_LOOP:
+    MVI C, 16           ; Disassemble 16 lines per command
+    
+U_LINE_LOOP:
+    PUSH B              ; Save line counter (C)
+    
+    LHLD VAR_MODIFY_PTR
+    MOV A, H
+    CALL PRINT_HEX_BYTE
+    MOV A, L
+    CALL PRINT_HEX_BYTE
+    MVI A, ':'
+    CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    
+    MOV B, M            ; B = opcode
+    
+    LXI H, DISASM_MAP
+    MOV E, B
+    MVI D, 0
+    DAD D
+    MOV A, M            ; A = Template ID
+    CALL GET_TEMPLATE   ; HL = Template String
+    
+    PUSH H              ; Save Template String pointer
+    
+    ; Dry-run scan of the template to determine instruction length (1, 2, or 3 bytes)
+    MVI D, 1            ; Default Length = 1
+U_LEN_LOOP:
+    MOV A, M
+    ORA A
+    JZ U_LEN_DONE
+    INX H
+    CPI 0x86            ; Token 0x86 means 8-bit operand (Length = 2)
+    JNZ U_LEN_NOT_2
+    MVI D, 2
+    JMP U_LEN_LOOP
+U_LEN_NOT_2:
+    CPI 0x87            ; Token 0x87 means 16-bit operand (Length = 3)
+    JNZ U_LEN_LOOP
+    MVI D, 3
+    JMP U_LEN_LOOP
+U_LEN_DONE:
+    
+    ; Print the raw bytes padded to exact alignment (e.g. "C3 10 30   ")
+    LHLD VAR_MODIFY_PTR
+    MOV E, D            ; E = length
+    MVI A, 3            ; Max padding columns
+    SUB E
+    MOV B, A            ; B = padding required
+U_RAW_LOOP:
+    MOV A, M
+    CALL PRINT_HEX_BYTE
+    CALL PRINT_SPACE
+    INX H
+    DCR E
+    JNZ U_RAW_LOOP
+    
+    MOV A, B
+    ORA A
+    JZ U_PAD_DONE
+U_PAD_LOOP:
+    CALL PRINT_SPACE
+    CALL PRINT_SPACE
+    CALL PRINT_SPACE
+    DCR B
+    JNZ U_PAD_LOOP
+U_PAD_DONE:
+    CALL PRINT_SPACE
+    
+    POP D               ; D = Template String
+    LHLD VAR_MODIFY_PTR
+    MOV C, M            ; C = opcode (for extracting tokens)
+    INX H               ; HL = next byte (for extracting d8/d16)
+    
+U_PARSE_LOOP:
+    LDAX D
+    ORA A
+    JZ U_LINE_DONE
+    INX D
+    
+    CPI 0x80
+    JC U_PRINT_LITERAL
+    
+    ; Evaluate Formatting Tokens
+    CPI 0x81
+    JZ U_TOK_R1
+    CPI 0x82
+    JZ U_TOK_R2
+    CPI 0x83
+    JZ U_TOK_RP
+    CPI 0x84
+    JZ U_TOK_RP2
+    CPI 0x85
+    JZ U_TOK_CC
+    CPI 0x86
+    JZ U_TOK_D8
+    CPI 0x87
+    JZ U_TOK_D16
+    CPI 0x88
+    JZ U_TOK_RST
+    
+U_PRINT_LITERAL:
+    CALL PRINT_CHAR
+    JMP U_PARSE_LOOP
+    
+U_TOK_R1:
+    MOV A, C
+    RRC
+    RRC
+    RRC
+    ANI 0x07
+    CALL PRINT_REG_NAME
+    JMP U_PARSE_LOOP
+    
+U_TOK_R2:
+    MOV A, C
+    ANI 0x07
+    CALL PRINT_REG_NAME
+    JMP U_PARSE_LOOP
+    
+U_TOK_RP:
+    MOV A, C
+    RRC
+    RRC
+    RRC
+    RRC
+    ANI 0x03
+    CALL PRINT_RP_NAME
+    JMP U_PARSE_LOOP
+    
+U_TOK_RP2:
+    MOV A, C
+    RRC
+    RRC
+    RRC
+    RRC
+    ANI 0x03
+    CALL PRINT_RP2_NAME
+    JMP U_PARSE_LOOP
+    
+U_TOK_CC:
+    MOV A, C
+    RRC
+    RRC
+    RRC
+    ANI 0x07
+    CALL PRINT_CC_NAME
+    JMP U_PARSE_LOOP
+    
+U_TOK_D8:
+    MOV A, M
+    CALL PRINT_HEX_BYTE
+    MVI A, 'H'
+    CALL PRINT_CHAR
+    INX H
+    JMP U_PARSE_LOOP
+    
+U_TOK_D16:
+    ; 8080 is Little-Endian. Print High Byte first, then Low Byte.
+    INX H
+    MOV A, M
+    CALL PRINT_HEX_BYTE
+    DCX H
+    MOV A, M
+    CALL PRINT_HEX_BYTE
+    MVI A, 'H'
+    CALL PRINT_CHAR
+    INX H
+    INX H
+    JMP U_PARSE_LOOP
+    
+U_TOK_RST:
+    MOV A, C
+    RRC
+    RRC
+    RRC
+    ANI 0x07
+    ADI '0'
+    CALL PRINT_CHAR
+    JMP U_PARSE_LOOP
+    
+U_LINE_DONE:
+    CALL NEW_LINE
+    
+    ; Safe advancement! HL currently points precisely to the start of the next instruction 
+    ; because the tokens `INX H` exactly the correct amount during evaluation!
+    SHLD VAR_MODIFY_PTR
+    
+    POP B               ; Restore line counter
+    DCR C
+    JNZ U_LINE_LOOP
+    JMP MAIN_LOOP       ; Back to prompt
+
+; --- Disassembler Subroutines ---
+GET_TEMPLATE:
+    LXI H, TEMPLATES
+    MOV B, A
+    ORA A
+    JZ GT_DONE
+GT_LOOP:
+    MOV A, M
+    INX H
+    ORA A
+    JNZ GT_LOOP
+    DCR B
+    JNZ GT_LOOP
+GT_DONE:
+    RET
+
+PRINT_REG_NAME:
+    PUSH H
+    PUSH D
+    LXI H, DISASM_REG
+    MOV E, A
+    MVI D, 0
+    DAD D
+    MOV A, M
+    CALL PRINT_CHAR
+    POP D
+    POP H
+    RET
+    
+PRINT_RP_NAME:
+    PUSH H
+    PUSH D
+    LXI H, DISASM_RP
+    MOV E, A
+    MVI D, 0
+    DAD D
+    MOV A, M
+    CALL PRINT_CHAR
+    CPI 'S'
+    JNZ PRPN_DONE
+    MVI A, 'P'
+    CALL PRINT_CHAR
+PRPN_DONE:
+    POP D
+    POP H
+    RET
+    
+PRINT_RP2_NAME:
+    PUSH H
+    PUSH D
+    LXI H, DISASM_RP2
+    MOV E, A
+    MVI D, 0
+    DAD D
+    MOV A, M
+    CALL PRINT_CHAR
+    CPI 'P'
+    JNZ PRP2_DONE
+    MVI A, 'S'
+    CALL PRINT_CHAR
+    MVI A, 'W'
+    CALL PRINT_CHAR
+PRP2_DONE:
+    POP D
+    POP H
+    RET
+    
+PRINT_CC_NAME:
+    PUSH H
+    PUSH D
+    LXI H, DISASM_CC
+    ADD A          ; A = A * 2
+    MOV E, A
+    MVI D, 0
+    DAD D
+    MOV A, M
+    CALL PRINT_CHAR
+    INX H
+    MOV A, M
+    CPI ' '
+    JZ PCCN_DONE
+    CALL PRINT_CHAR
+PCCN_DONE:
+    POP D
+    POP H
+    RET
 
 ; ---------------------------------------------------------
 ; Subroutine: READ_LINE
@@ -746,6 +1043,7 @@ PC_DONE:
 NEW_LINE:
     PUSH H
     PUSH D
+    PUSH B
     PUSH PSW
     
     ; X = 0
@@ -757,7 +1055,34 @@ NEW_LINE:
     INR A
     CPI 30              ; Check if we hit the bottom of the screen
     JC NL_NO_WRAP
-    MVI A, 0            ; For now, just wrap back to the top of the screen
+    
+    ; --- Scroll Screen Up ---
+    LXI H, 0xA050       ; Source (Row 1)
+    LXI D, 0xA000       ; Destination (Row 0)
+    LXI B, 2320         ; 80 * 29 = 2320 bytes
+NL_SCROLL_LOOP:
+    MOV A, M
+    STAX D
+    INX H
+    INX D
+    DCX B
+    MOV A, B
+    ORA C
+    JNZ NL_SCROLL_LOOP
+    
+    ; --- Clear Bottom Row ---
+    ; DE now points to 0xA910 (Start of Row 29)
+    LXI B, 80           ; 80 columns
+NL_CLEAR_LOOP:
+    MVI A, 0x20         ; Space character
+    STAX D
+    INX D
+    DCX B
+    MOV A, B
+    ORA C
+    JNZ NL_CLEAR_LOOP
+    
+    MVI A, 29           ; Keep cursor on row 29
 NL_NO_WRAP:
     STA VAR_CURSOR_Y
     
@@ -780,6 +1105,7 @@ NL_NO_WRAP:
     CALL SYNC_CURSOR
     
     POP PSW
+    POP B
     POP D
     POP H
     RET
@@ -816,3 +1142,89 @@ SCAN_TO_ASCII:
 ; ---------------------------------------------------------
 REG_NAMES:
     DB "AFBCDEHLSPPC", 0
+
+; ---------------------------------------------------------
+; Disassembler Constants and Tables
+; ---------------------------------------------------------
+DISASM_REG: DB "BCDEHLMA"
+DISASM_RP:  DB "BDHS"
+DISASM_RP2: DB "BDHP"
+DISASM_CC:  DB "NZZ NCCCPOPEP M "
+
+DISASM_MAP:
+    DB 0x00, 0x03, 0x05, 0x06, 0x09, 0x0A, 0x02, 0x1B, 0x39, 0x08, 0x04, 0x07, 0x09, 0x0A, 0x02, 0x1C
+    DB 0x39, 0x03, 0x05, 0x06, 0x09, 0x0A, 0x02, 0x1D, 0x39, 0x08, 0x04, 0x07, 0x09, 0x0A, 0x02, 0x1E
+    DB 0x39, 0x03, 0x2D, 0x06, 0x09, 0x0A, 0x02, 0x1F, 0x39, 0x08, 0x2E, 0x07, 0x09, 0x0A, 0x02, 0x20
+    DB 0x39, 0x03, 0x2F, 0x06, 0x09, 0x0A, 0x02, 0x21, 0x39, 0x08, 0x30, 0x07, 0x09, 0x0A, 0x02, 0x22
+    DB 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01
+    DB 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01
+    DB 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01
+    DB 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x23, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01
+    DB 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C
+    DB 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0E, 0x0E, 0x0E, 0x0E, 0x0E, 0x0E, 0x0E, 0x0E
+    DB 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10
+    DB 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12
+    DB 0x29, 0x2C, 0x25, 0x24, 0x27, 0x2B, 0x13, 0x2A, 0x29, 0x28, 0x25, 0x39, 0x27, 0x26, 0x14, 0x2A
+    DB 0x29, 0x2C, 0x25, 0x32, 0x27, 0x2B, 0x15, 0x2A, 0x29, 0x39, 0x25, 0x31, 0x27, 0x39, 0x16, 0x2A
+    DB 0x29, 0x2C, 0x25, 0x34, 0x27, 0x2B, 0x17, 0x2A, 0x29, 0x36, 0x25, 0x33, 0x27, 0x39, 0x18, 0x2A
+    DB 0x29, 0x2C, 0x25, 0x37, 0x27, 0x2B, 0x19, 0x2A, 0x29, 0x35, 0x25, 0x38, 0x27, 0x39, 0x1A, 0x2A
+    
+TEMPLATES:
+    DB "NOP",0                          ; 00
+    DB "MOV ", 0x81, ",", 0x82, 0       ; 01
+    DB "MVI ", 0x81, ",", 0x86, 0       ; 02
+    DB "LXI ", 0x83, ",", 0x87, 0       ; 03
+    DB "LDAX ", 0x83, 0                 ; 04
+    DB "STAX ", 0x83, 0                 ; 05
+    DB "INX ", 0x83, 0                  ; 06
+    DB "DCX ", 0x83, 0                  ; 07
+    DB "DAD ", 0x83, 0                  ; 08
+    DB "INR ", 0x81, 0                  ; 09
+    DB "DCR ", 0x81, 0                  ; 0A
+    DB "ADD ", 0x82, 0                  ; 0B
+    DB "ADC ", 0x82, 0                  ; 0C
+    DB "SUB ", 0x82, 0                  ; 0D
+    DB "SBB ", 0x82, 0                  ; 0E
+    DB "ANA ", 0x82, 0                  ; 0F
+    DB "XRA ", 0x82, 0                  ; 10
+    DB "ORA ", 0x82, 0                  ; 11
+    DB "CMP ", 0x82, 0                  ; 12
+    DB "ADI ", 0x86, 0                  ; 13
+    DB "ACI ", 0x86, 0                  ; 14
+    DB "SUI ", 0x86, 0                  ; 15
+    DB "SBI ", 0x86, 0                  ; 16
+    DB "ANI ", 0x86, 0                  ; 17
+    DB "XRI ", 0x86, 0                  ; 18
+    DB "ORI ", 0x86, 0                  ; 19
+    DB "CPI ", 0x86, 0                  ; 1A
+    DB "RLC", 0                         ; 1B
+    DB "RRC", 0                         ; 1C
+    DB "RAL", 0                         ; 1D
+    DB "RAR", 0                         ; 1E
+    DB "DAA", 0                         ; 1F
+    DB "CMA", 0                         ; 20
+    DB "STC", 0                         ; 21
+    DB "CMC", 0                         ; 22
+    DB "HLT", 0                         ; 23
+    DB "JMP ", 0x87, 0                  ; 24
+    DB "J", 0x85, " ", 0x87, 0          ; 25
+    DB "CALL ", 0x87, 0                 ; 26
+    DB "C", 0x85, " ", 0x87, 0          ; 27
+    DB "RET", 0                         ; 28
+    DB "R", 0x85, 0                     ; 29
+    DB "RST ", 0x88, 0                  ; 2A
+    DB "PUSH ", 0x84, 0                 ; 2B
+    DB "POP ", 0x84, 0                  ; 2C
+    DB "SHLD ", 0x87, 0                 ; 2D
+    DB "LHLD ", 0x87, 0                 ; 2E
+    DB "STA ", 0x87, 0                  ; 2F
+    DB "LDA ", 0x87, 0                  ; 30
+    DB "IN ", 0x86, 0                   ; 31
+    DB "OUT ", 0x86, 0                  ; 32
+    DB "XCHG", 0                        ; 33
+    DB "XTHL", 0                        ; 34
+    DB "SPHL", 0                        ; 35
+    DB "PCHL", 0                        ; 36
+    DB "DI", 0                          ; 37
+    DB "EI", 0                          ; 38
+    DB "???", 0                         ; 39

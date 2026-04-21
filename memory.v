@@ -56,8 +56,8 @@ module memory(
     // -------------------------------------------------------------------------
     // Instantiations of Generic Block RAM Modules
     // -------------------------------------------------------------------------
-    block_rom #(.ADDR_WIDTH(11), .INIT_FILE("program.hex")) rom_inst (
-        .clk(clk), .addr(mar[10:0]), .q(rom_out)
+    block_rom #(.ADDR_WIDTH(12), .DEPTH(2560), .INIT_FILE("program.hex")) rom_inst (
+        .clk(clk), .addr(mar[11:0]), .q(rom_out)
     );
 
     block_ram #(.ADDR_WIDTH(13), .DEPTH(8192)) ram_inst (
@@ -114,7 +114,7 @@ module memory(
 
     // CPU Memory Read Logic (Combinational multiplexer based on delayed MAR)
     always @(*) begin
-        if (mar_d1 <= 16'h07FF)
+        if (mar_d1 < 16'h0A00)
             out = rom_out;
         else if (mar_d1 >= 16'h2000 && mar_d1 <= 16'h3FFF)
             out = ram_out;
@@ -171,14 +171,15 @@ endmodule
 
 // Single-Port ROM
 module block_rom #(
-    parameter ADDR_WIDTH = 11,
+    parameter ADDR_WIDTH = 12,
+    parameter DEPTH = 2560,
     parameter INIT_FILE = "program.hex"
 )(
     input  wire                  clk,
     input  wire [ADDR_WIDTH-1:0] addr,
     output reg  [7:0]            q
 );
-    reg [7:0] rom [0:(1<<ADDR_WIDTH)-1];
+    reg [7:0] rom [0:DEPTH-1];
     initial begin
         if (INIT_FILE != "") $readmemh(INIT_FILE, rom);
     end

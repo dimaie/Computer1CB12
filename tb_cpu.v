@@ -48,7 +48,7 @@ module tb_cpu;
         $display("--------------------------------------------------");
         
         // Wipe ROM with HLT (0x76) so runaway code instantly stops
-        for (i = 0; i < 2048; i = i + 1) uut.memory.rom_inst.rom[i] = 8'h76;
+        for (i = 0; i < 2560; i = i + 1) uut.memory.rom_inst.rom[i] = 8'h76;
         
         // Wipe 8KB User RAM (0x2000 to 0x3FFF)
         for (i = 0; i < 8192; i = i + 1) uut.memory.ram_inst.ram[i] = 8'h00;
@@ -61,7 +61,7 @@ module tb_cpu;
     // Task: Inject an opcode into Program ROM
     task write_op(input [15:0] addr, input [7:0] op);
     begin
-        uut.memory.rom_inst.rom[addr[10:0]] = op;
+        uut.memory.rom_inst.rom[addr[11:0]] = op;
     end
     endtask
 
