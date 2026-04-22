@@ -121,7 +121,8 @@ wire uart_rx_done;
 wire uart_tx_busy;
 
 // Signal assignments
-assign rst = ~RESET_N;           // Convert active-low to active-high reset
+wire kb_sys_reset;
+assign rst = (~RESET_N) | kb_sys_reset; // Combine physical and keyboard soft-reset
 
 assign LEDR = port_out[7:0];     // Connect LEDs to output port
 
@@ -326,11 +327,12 @@ controller controller(
 // PS/2 Keyboard Interface
 ps2_keyboard ps2_keyboard_inst(
 	.clk(clk_25m),
-	.rst(rst),
+	.rst(~RESET_N), // IMPORTANT: Use only physical reset to prevent F5 suicide glitch
 	.ps2_clk(PS2_CLK),
 	.ps2_dat(PS2_DAT),
 	.scan_code(ps2_scan_code),
-	.scan_code_ready(ps2_scan_code_ready)
+	.scan_code_ready(ps2_scan_code_ready),
+	.sys_reset(kb_sys_reset)
 );
 
 // UART Interface

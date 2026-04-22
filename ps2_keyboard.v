@@ -8,7 +8,8 @@ module ps2_keyboard(
     
     // Processor interface
     output reg  [7:0] scan_code,
-    output reg        scan_code_ready
+    output reg        scan_code_ready,
+    output reg        sys_reset       // Hardware reset triggered by F5
 );
 
     // Synchronize PS/2 clock to the system clock to prevent metastability
@@ -35,6 +36,7 @@ module ps2_keyboard(
             scan_code       <= 8'h00;
             scan_code_ready <= 1'b0;
             ignore_next     <= 1'b0;
+            sys_reset       <= 1'b0;
         end else begin
             scan_code_ready <= 1'b0; // Default to 0, pulse high for one cycle when done
             
@@ -50,9 +52,14 @@ module ps2_keyboard(
                             ignore_next <= 1'b1;
                         end else if (ignore_next) begin
                             ignore_next <= 1'b0;
+                            if (shift_reg[9:2] == 8'h03) sys_reset <= 1'b0; // Release Reset on F5 release
                         end else begin
-                            scan_code       <= shift_reg[9:2];
-                            scan_code_ready <= 1'b1;
+                            if (shift_reg[9:2] == 8'h03) begin
+                                sys_reset <= 1'b1; // Trigger Reset on F5 press
+                            end else begin
+                                scan_code       <= shift_reg[9:2];
+                                scan_code_ready <= 1'b1;
+                            end
                         end
                     end
                 end else begin
