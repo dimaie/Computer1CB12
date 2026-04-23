@@ -99,7 +99,7 @@ module memory(
             mar_d1 <= mar;
             
             // Register Write Decoding
-            if (ram_we && mar >= 16'hC001 && mar <= 16'hC005) begin
+            if (ram_we && mar >= 16'hC001 && mar <= 16'hC006) begin
                 case (mar[2:0])
                     3'b001: ink_color    <= bus[7:0]; // 0xC001
                     3'b010: bg_color     <= bus[7:0]; // 0xC002

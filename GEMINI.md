@@ -19,8 +19,8 @@ The hardware is based on the OneChipBook laptop. `OneChipBook12-TechRef.pdf` is 
 - `rst`: Internal reset (active-high).
 
 ## Memory Map
-- `0x0000` - `0x07FF`: 2KB Program ROM
-- `0x0800` - `0x1FFF`: Unused
+- `0x0000` - `0x0BFF`: 3KB Program ROM
+- `0x0C00` - `0x1FFF`: Unused
 - `0x2000` - `0x3FFF`: 8KB Program RAM
 - `0x4000` - `0x657F`: 9600 Bytes Video Graphics RAM (320x240 monochrome, Read/Write)
 - `0x6580` - `0x9FFF`: Unused
@@ -32,6 +32,7 @@ The hardware is based on the OneChipBook laptop. `OneChipBook12-TechRef.pdf` is 
 - `0xC003`: Cursor X Position Register (0-79)
 - `0xC004`: Cursor Y Position Register (0-29)
 - `0xC005`: Cursor Style Register (0=Hidden, 1=Half, 2=Full)
+- `0xC006`: Video Graphics Ink Color Register
 
 ## Architecture Notes
 - The external board reset (`RESET_N`) is active-low, but it is inverted to an active-high `rst` signal at the top level (`Computer1CB12-1_Top.v`). All sub-modules should assume `rst` is active-high.
