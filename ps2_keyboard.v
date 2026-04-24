@@ -27,7 +27,7 @@ module ps2_keyboard(
 
     reg [3:0]  bit_count;
     reg [10:0] shift_reg;
-    reg        ignore_next;
+    reg        is_break; // Replaces ignore_next for passive F5 sniffing
 
     always @(posedge clk) begin
         if (rst) begin
@@ -35,7 +35,7 @@ module ps2_keyboard(
             shift_reg       <= 11'd0;
             scan_code       <= 8'h00;
             scan_code_ready <= 1'b0;
-            ignore_next     <= 1'b0;
+            is_break        <= 1'b0;
             sys_reset       <= 1'b0;
         end else begin
             scan_code_ready <= 1'b0; // Default to 0, pulse high for one cycle when done
@@ -48,18 +48,18 @@ module ps2_keyboard(
                     bit_count <= 4'd0;
                     // Validate start bit (0) and stop bit (1) before outputting
                     if (shift_reg[1] == 1'b0 && ps2_dat == 1'b1) begin
+                        // 1. Always pass every valid scan code to the CPU
+                        scan_code       <= shift_reg[9:2];
+                        scan_code_ready <= 1'b1;
+                        
+                        // 2. Passively sniff the stream for the F5 (0x03) hardware reset
                         if (shift_reg[9:2] == 8'hF0) begin
-                            ignore_next <= 1'b1;
-                        end else if (ignore_next) begin
-                            ignore_next <= 1'b0;
-                            if (shift_reg[9:2] == 8'h03) sys_reset <= 1'b0; // Release Reset on F5 release
-                        end else begin
+                            is_break <= 1'b1;
+                        end else if (shift_reg[9:2] != 8'hE0) begin
                             if (shift_reg[9:2] == 8'h03) begin
-                                sys_reset <= 1'b1; // Trigger Reset on F5 press
-                            end else begin
-                                scan_code       <= shift_reg[9:2];
-                                scan_code_ready <= 1'b1;
+                                sys_reset <= ~is_break; // Assert on press, clear on release
                             end
+                            is_break <= 1'b0; // Clear break flag on payload
                         end
                     end
                 end else begin
