@@ -29,6 +29,10 @@ module Computer1CB121_Top(
 	input 		          		UART_RXD,    // DB9 1# Pin 2
 	output		          		UART_TXD,    // DB9 1# Pin 3
 
+	//////////// USB //////////
+	inout 		          		USBP2,       // FPGA Pin 239
+	inout 		          		USBN2,       // FPGA Pin 238
+
 	//////////// VGA //////////
 	output		          		VGA_HSYNC,
 	output		          		VGA_VSYNC,
@@ -164,12 +168,20 @@ end
 
 // Input ports multiplexer
 reg [7:0] in_port_data;
+wire [15:0] mouse_x;
+wire [15:0] mouse_y;
+wire [7:0]  mouse_btn;
 always @(*) begin
     case (oar_addr)
         8'h00: in_port_data = kb_data;
         8'h01: in_port_data = {7'b0, kb_ready};
         8'h02: in_port_data = uart_data_in;
         8'h03: in_port_data = {6'b0, uart_ready, uart_tx_busy};
+		8'h04: in_port_data = mouse_x[7:0];   // Mouse X Low Byte
+		8'h05: in_port_data = mouse_x[15:8];  // Mouse X High Byte
+		8'h06: in_port_data = mouse_y[7:0];   // Mouse Y Low Byte
+		8'h07: in_port_data = mouse_y[15:8];  // Mouse Y High Byte
+		8'h08: in_port_data = mouse_btn;      // Mouse Buttons
         default: in_port_data = 8'h00;
     endcase
 end
@@ -210,12 +222,21 @@ always @(posedge clk or posedge rst) begin
     end
 end
 
-// PLL to generate 25.175 MHz from 21.4772 MHz input
-pll sys_pll(
-	.areset(1'b0), // Do not reset the PLL with the user button to avoid clock instability
+// ========================================================
+// USB 12MHz Clock Generation Workaround
+// ========================================================
+wire clk_24mhz;
+usb_vga_pll usb_vga_pll_inst (
 	.inclk0(CLOCK_21),
-	.c0(clk_25m)
+	.c0(clk_25m),
+	.c1(clk_24mhz)
 );
+
+
+reg clk_12mhz = 0;
+always @(posedge clk_24mhz) begin
+	clk_12mhz <= ~clk_12mhz; // Perfect 50% duty cycle 12MHz
+end
 
 // Step button controller for manual clock stepping
 step_button step_button(
@@ -372,6 +393,18 @@ display_controller vga_ctrl(
 	.vga_r(VGA_R),
 	.vga_g(VGA_G),
 	.vga_b(VGA_B)
+);
+
+// USB Mouse Integration
+sap3_mouse_wrapper mouse_ctrl (
+	.clk(clk_25m), // Use free-running clock for CDC synchronizer, not gated CPU clock
+	.usbclk(clk_12mhz),
+	.rst(rst),
+	.usb_dp(USBP2),
+	.usb_dm(USBN2),
+	.mouse_x(mouse_x),
+	.mouse_y(mouse_y),
+	.mouse_btn(mouse_btn)
 );
 
 endmodule
