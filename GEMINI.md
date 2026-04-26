@@ -31,7 +31,7 @@ The hardware is based on the OneChipBook laptop. `OneChipBook12-TechRef.pdf` is 
 - `0xC002`: Video Background Color Register
 - `0xC003`: Cursor X Position Register (0-79)
 - `0xC004`: Cursor Y Position Register (0-29)
-- `0xC005`: Cursor Style Register (0=Hidden, 1=Half, 2=Full)
+- `0xC005`: Cursor Style Register (0=Hidden, 1=Half Blinking, 2=Full Blinking, 3=Full Solid)
 - `0xC006`: Video Graphics Ink Color Register
 
 ## Architecture Notes

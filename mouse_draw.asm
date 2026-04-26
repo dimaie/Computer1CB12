@@ -11,9 +11,14 @@ MOUSE_Y_H EQU 07h
 MOUSE_BTN EQU 08h
 CUR_X     EQU 0C003h
 CUR_Y     EQU 0C004h
+CUR_STYLE EQU 0C005h
 
     ORG 3000h
     LXI SP, 3FFFh
+
+    ; Set Cursor Style to Full Block Solid (Non-Blinking)
+    MVI A, 03h
+    STA CUR_STYLE
 
     ; 1. Clear Graphics RAM (4000h to 657Fh = 9600 bytes = 2580h)
     LXI H, GFX_RAM
@@ -55,8 +60,9 @@ Main_Loop:
 
     ; --- Check Mouse Button ---
     IN MOUSE_BTN
-    ANI 01h       ; Check Left Button (Bit 0)
-    JZ Main_Loop  ; If not pressed, jump back to top
+    ANI 03h       ; Check Left (Bit 0) and Right (Bit 1) Buttons
+    JZ Main_Loop  ; If neither pressed, jump back to top
+    PUSH PSW      ; Save button state to the stack
 
     ; --- Draw Pixel ---
     ; Calculate: HL = (Y * 40)
@@ -89,8 +95,21 @@ Main_Loop:
     ADD E ! MOV E, A ! MOV A, D ! ACI 00h ! MOV D, A ; DE = BitMasks + (X % 8)
     LDAX D        ; A = Specific Bit Mask
 
-    ; Set the pixel
+    ; Set or Clear the pixel
+    MOV B, A      ; Save Mask in B
+    POP PSW       ; Restore button state
+    ANI 02h       ; Check Right Button (Bit 1)
+    MOV A, B      ; Restore Mask to A
+    JNZ Erase_Pixel
+
+Draw_Pixel:
     ORA M         ; Read current byte from screen, OR with new bit
+    MOV M, A      ; Write updated byte back to screen
+    JMP Main_Loop
+
+Erase_Pixel:
+    CMA           ; Invert mask (e.g., 01000000b -> 10111111b)
+    ANA M         ; AND with current byte to clear the bit
     MOV M, A      ; Write updated byte back to screen
     JMP Main_Loop
 

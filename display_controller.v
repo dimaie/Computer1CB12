@@ -106,11 +106,11 @@ module display_controller(
     wire gfx_pixel     = vga_gfx_data[ 3'd7 - x_cnt[3:1] ];  // MSB is drawn left-most
     wire in_gfx_bounds = 1'b1; // Full screen
     
-    // Hardware Cursor Logic: XOR the text pixel if we are over the cursor cell and the blink timer is high
+    // Hardware Cursor Logic: XOR the text pixel if we are over the cursor cell (and blink timer is high, if applicable)
     wire in_cursor_cell = (x_cnt[9:3] == cursor_x) && (y_cnt[8:4] == cursor_y);
-    wire cursor_shape_active = (cursor_style == 2'd2) || 
+    wire cursor_shape_active = (cursor_style == 2'd3) || (cursor_style == 2'd2) || 
                                (cursor_style == 2'd1 && y_cnt[3] == 1'b1);
-    wire show_cursor    = in_cursor_cell && cursor_shape_active && blink_cnt[5] && (cursor_style != 2'd0);
+    wire show_cursor    = in_cursor_cell && cursor_shape_active && (blink_cnt[5] || cursor_style == 2'd3) && (cursor_style != 2'd0);
     wire text_pixel     = raw_text_pixel ^ show_cursor;
 
     // Layer [1] = Graphics, Layer [0] = Text
