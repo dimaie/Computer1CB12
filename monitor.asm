@@ -981,8 +981,20 @@ PCCN_DONE:
 ; Reads a line of text into VAR_INPUT_BUF, handles backspace/echo
 ; ---------------------------------------------------------
 READ_LINE:
+    ; Flush any stale keystrokes (like Enter release from previous commands)
+RL_FLUSH:
+    IN 0x01
+    ANI 0x01
+    JZ RL_FLUSH_DONE
+    IN 0x00
+    JMP RL_FLUSH
+RL_FLUSH_DONE:
+    
+    ; Reset Keyboard State
+    XRA A
+    STA VAR_KB_STATE
+    
     ; Clear Input Buffer Length
-    MVI A, 0
     STA VAR_INPUT_LEN
 RL_LOOP:
     CALL GET_KEY        ; Wait for key, return ASCII in A
