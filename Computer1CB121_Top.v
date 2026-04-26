@@ -92,6 +92,7 @@ wire [6:0]  cursor_x;
 wire [4:0]  cursor_y;
 wire [1:0]  cursor_style;
 wire [7:0]  gfx_ink_color;
+wire        vga_vblank;
 
 // Instruction register interface signals
 wire ir_we;
@@ -182,6 +183,7 @@ always @(*) begin
 		8'h06: in_port_data = mouse_y[7:0];   // Mouse Y Low Byte
 		8'h07: in_port_data = mouse_y[15:8];  // Mouse Y High Byte
 		8'h08: in_port_data = mouse_btn;      // Mouse Buttons
+		8'h09: in_port_data = {7'b0, vga_vblank}; // VGA VBLANK Status
         default: in_port_data = 8'h00;
     endcase
 end
@@ -388,6 +390,7 @@ display_controller vga_ctrl(
 	.cursor_y(cursor_y),
 	.cursor_style(cursor_style),
 	.gfx_ink_color(gfx_ink_color),
+	.vblank(vga_vblank),
 	.vga_hsync(VGA_HSYNC),
 	.vga_vsync(VGA_VSYNC),
 	.vga_r(VGA_R),

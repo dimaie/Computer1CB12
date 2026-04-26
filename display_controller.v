@@ -32,6 +32,7 @@ module display_controller(
     // Physical VGA Pins
     output reg         vga_hsync,
     output reg         vga_vsync,
+    output wire        vblank,
     output reg  [5:0]  vga_r,
     output reg  [5:0]  vga_g,
     output reg  [5:0]  vga_b
@@ -117,6 +118,9 @@ module display_controller(
     wire draw_txt = (layer_enable[0] && text_pixel);
     wire draw_gfx = (layer_enable[1] && in_gfx_bounds && gfx_pixel);
     wire [7:0] active_color = draw_txt ? ink_color : (draw_gfx ? gfx_ink_color : bg_color);
+
+    // VBLANK is high whenever the Y counter is outside the visible screen area
+    assign vblank = (y_cnt >= V_VISIBLE);
 
     always @(posedge clk) begin
         // Output syncs directly derived from current beam position

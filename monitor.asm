@@ -37,9 +37,21 @@ VAR_BP_BYTES:   DS 3
 VAR_DISASM_PTR: DS 2
 
 ; ---------------------------------------------------------
-; Main Program
+; C-Compiler ROM API Jump Table (Fixed Addresses)
 ; ---------------------------------------------------------
 ORG 0x0010
+API_PRINT_CHAR:    JMP PRINT_CHAR_C
+API_READ_KEY:      JMP READ_KEY_C
+API_CLEAR_SCREEN:  JMP CLEAR_SCREEN_C
+API_PRINT_CHAR_XY: JMP PRINT_CHAR_XY_C
+API_READ_CHAR_XY:  JMP READ_CHAR_XY_C
+API_READ_PIXEL_XY: JMP READ_PIXEL_XY_C
+API_CHECK_KEY:     JMP CHECK_KEY_C
+
+; ---------------------------------------------------------
+; Main Program
+; ---------------------------------------------------------
+ORG 0x0028
 START:
     LXI SP, 0x3FFF      ; Initialize Stack Pointer
     
@@ -392,6 +404,227 @@ RECV_ERROR:
     MVI A, 0x15         ; Send NAK
     CALL UART_SEND_BYTE
     JMP CMD_ERROR       ; Print '?' and return to prompt
+
+; =========================================================================
+; C-Compiler ROM API Implementations
+; =========================================================================
+
+; void print_char(int c) @ 0x0010
+PRINT_CHAR_C:
+    PUSH B
+    PUSH D
+    LXI H, 6
+    DAD SP
+    MOV A, M            ; Read low byte of 'c'
+    CALL PRINT_CHAR     ; Call monitor native routine
+    POP D
+    POP B
+    RET
+
+; int read_key() @ 0x0013
+READ_KEY_C:
+    PUSH B
+    PUSH D
+    CALL GET_KEY        ; Blocks, returns ASCII in A
+    MOV L, A
+    MVI H, 0
+    POP D
+    POP B
+    RET
+
+; void clear_screen(int layer) @ 0x0016
+CLEAR_SCREEN_C:
+    PUSH B
+    PUSH D
+    LXI H, 6
+    DAD SP
+    MOV A, M            ; Read low byte of 'layer'
+    CPI 2
+    JZ _CS_GFX
+    CPI 1
+    JZ _CS_TXT
+_CS_BOTH:
+    CALL CLEAR_SCREEN   ; Clears Text RAM and resets cursor
+    CALL _DO_CS_GFX
+    JMP _CS_DONE
+_CS_TXT:
+    CALL CLEAR_SCREEN
+    JMP _CS_DONE
+_CS_GFX:
+    CALL _DO_CS_GFX
+_CS_DONE:
+    POP D
+    POP B
+    RET
+
+_DO_CS_GFX:
+    LXI H, 0x4000       ; Graphics RAM Base Address
+    LXI B, 9600         ; 320x240 bits / 8
+_CS_GFX_LOOP:
+    MVI M, 0x00         ; Fill with 0 (empty pixels)
+    INX H
+    DCX B
+    MOV A, B
+    ORA C
+    JNZ _CS_GFX_LOOP
+    RET
+
+; void print_char_xy(int c, int x, int y) @ 0x0019
+PRINT_CHAR_XY_C:
+    PUSH B
+    PUSH D
+    ; 1. Load 'y'
+    LXI H, 10
+    DAD SP
+    MOV A, M
+    MOV L, A
+    MVI H, 0            ; HL = y
+    ; 2. Fast calculation of: y * 80
+    DAD H               ; y * 2
+    DAD H               ; y * 4
+    DAD H               ; y * 8
+    DAD H               ; y * 16
+    MOV E, L
+    MOV D, H            ; DE = y * 16
+    DAD H               ; y * 32
+    DAD H               ; y * 64
+    DAD D               ; HL = y * 80
+    ; 3. Add 'x'
+    XCHG                ; DE = y * 80
+    LXI H, 8
+    DAD SP
+    MOV A, M            ; A = x
+    ADD E
+    MOV E, A
+    MOV A, D
+    ACI 0
+    MOV D, A            ; DE = (y * 80) + x
+    ; 4. Add Text RAM Base (0xA000)
+    LXI H, 0xA000
+    DAD D               ; HL = 0xA000 + (y * 80) + x
+    ; 5. Load 'c' and write
+    XCHG                ; DE points to the VRAM target
+    LXI H, 6
+    DAD SP
+    MOV A, M            ; A = c
+    STAX D              ; Write 'c' directly to VRAM target
+    POP D
+    POP B
+    RET
+
+; int read_char_xy(int x, int y) @ 0x001C
+READ_CHAR_XY_C:
+    PUSH B
+    PUSH D
+    ; 1. Load 'y'
+    LXI H, 8
+    DAD SP
+    MOV L, M
+    MVI H, 0            ; HL = y
+    ; 2. Fast calculation of: y * 80
+    DAD H               ; y * 2
+    DAD H               ; y * 4
+    DAD H               ; y * 8
+    DAD H               ; y * 16
+    MOV E, L
+    MOV D, H            ; DE = y * 16
+    DAD H               ; y * 32
+    DAD H               ; y * 64
+    DAD D               ; HL = y * 80
+    ; 3. Add 'x'
+    XCHG                ; DE = y * 80
+    LXI H, 6
+    DAD SP
+    MOV A, M            ; A = x
+    ADD E
+    MOV E, A
+    MOV A, D
+    ACI 0
+    MOV D, A            ; DE = (y * 80) + x
+    ; 4. Add Text RAM Base (0xA000)
+    LXI H, 0xA000
+    DAD D               ; HL = 0xA000 + (y * 80) + x
+    ; 5. Read character
+    MOV L, M            ; Return value in L
+    MVI H, 0            ; H = 0
+    POP D
+    POP B
+    RET
+
+; int read_pixel_xy(int x, int y) @ 0x001F
+READ_PIXEL_XY_C:
+    PUSH B
+    PUSH D
+    ; 1. Load 'y'
+    LXI H, 8
+    DAD SP
+    MOV L, M
+    MVI H, 0            ; HL = y
+    ; 2. Fast calculation of: y * 40
+    DAD H               ; y * 2
+    DAD H               ; y * 4
+    DAD H               ; y * 8
+    PUSH H              ; Save (y * 8)
+    DAD H               ; y * 16
+    DAD H               ; y * 32
+    POP D               ; DE = y * 8
+    DAD D               ; HL = y * 40
+    PUSH H              ; Save (y * 40)
+    ; 3. Load 'x' (16-bit, as it can be > 255)
+    LXI H, 8            ; Offset is 8 because we just pushed H
+    DAD SP
+    MOV E, M            ; E = x low
+    INX H
+    MOV D, M            ; D = x high
+    ; 4. Calculate x / 8 using 16-bit shifts
+    MOV A, D ! ORA A ! RAR ! MOV D, A ! MOV A, E ! RAR ! MOV E, A ; x / 2
+    MOV A, D ! ORA A ! RAR ! MOV D, A ! MOV A, E ! RAR ! MOV E, A ; x / 4
+    MOV A, D ! ORA A ! RAR ! MOV D, A ! MOV A, E ! RAR ! MOV E, A ; DE = x / 8
+    ; 5. Add to y * 40
+    POP H               ; HL = y * 40
+    DAD D               ; HL = (y * 40) + (x / 8)
+    ; 6. Add Graphics RAM Base (0x4000)
+    LXI D, 0x4000
+    DAD D               ; HL = 0x4000 + (y * 40) + (x / 8)
+    ; 7. Read VRAM byte
+    MOV B, M            ; B = VRAM byte
+    ; 8. Calculate x % 8 and get bitmask
+    LXI H, 6            ; Restore SP offset for 'x'
+    DAD SP
+    MOV A, M            ; A = x low
+    ANI 0x07            ; A = x % 8
+    LXI D, _RP_MASKS
+    ADD E ! MOV E, A ! MOV A, D ! ACI 0 ! MOV D, A ; DE = _RP_MASKS + (x % 8)
+    LDAX D              ; A = Specific Bit Mask
+    ; 9. Test pixel
+    ANA B               ; AND mask with VRAM byte
+    JZ _RP_ZERO
+    MVI L, 1
+    MVI H, 0
+    JMP _RP_DONE
+_RP_ZERO:
+    MVI L, 0
+    MVI H, 0
+_RP_DONE:
+    POP D
+    POP B
+    RET
+
+_RP_MASKS:
+    DB 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01
+
+; int check_key() @ 0x0022
+CHECK_KEY_C:
+    IN 0x01
+    ANI 0x01
+    JZ _CK_EMPTY
+    IN 0x00
+    MOV L, A
+    MVI H, 0
+    RET
+_CK_EMPTY:
+    LXI H, 0
+    RET
 
 ; ---------------------------------------------------------
 ; Commands: Step (S) and Breakpoint (B)

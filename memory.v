@@ -56,7 +56,7 @@ module memory(
     // -------------------------------------------------------------------------
     // Instantiations of Generic Block RAM Modules
     // -------------------------------------------------------------------------
-    block_rom #(.ADDR_WIDTH(12), .DEPTH(3072), .INIT_FILE("program.hex")) rom_inst (
+    block_rom #(.ADDR_WIDTH(12), .DEPTH(3572), .INIT_FILE("program.hex")) rom_inst (
         .clk(clk), .addr(mar[11:0]), .q(rom_out)
     );
 
@@ -114,7 +114,7 @@ module memory(
 
     // CPU Memory Read Logic (Combinational multiplexer based on delayed MAR)
     always @(*) begin
-        if (mar_d1 < 16'h0C00)
+        if (mar_d1 < 16'h0DF4)
             out = rom_out;
         else if (mar_d1 >= 16'h2000 && mar_d1 <= 16'h3FFF)
             out = ram_out;
