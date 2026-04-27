@@ -1,6 +1,6 @@
 module uart #(
-    // Default parameter assumes a 25.175MHz clock and 115200 baud rate (25,175,000 / 115200)
-    parameter CLOCKS_PER_BIT = 219
+    // Default parameter assumes a 21.477MHz clock and 115200 baud rate (21,477,270 / 115200)
+    parameter CLOCKS_PER_BIT = 186
 )(
     input  wire       clk,
     input  wire       rst,

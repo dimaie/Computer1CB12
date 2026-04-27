@@ -459,7 +459,7 @@ _CS_DONE:
 
 _DO_CS_GFX:
     LXI H, 0x4000       ; Graphics RAM Base Address
-    LXI B, 9600         ; 320x240 bits / 8
+    LXI B, 7680         ; 256x240 bits / 8
 _CS_GFX_LOOP:
     MVI M, 0x00         ; Fill with 0 (empty pixels)
     INX H
@@ -479,18 +479,15 @@ PRINT_CHAR_XY_C:
     MOV A, M
     MOV L, A
     MVI H, 0            ; HL = y
-    ; 2. Fast calculation of: y * 80
+    ; 2. Fast calculation of: y * 64
     DAD H               ; y * 2
     DAD H               ; y * 4
     DAD H               ; y * 8
     DAD H               ; y * 16
-    MOV E, L
-    MOV D, H            ; DE = y * 16
     DAD H               ; y * 32
     DAD H               ; y * 64
-    DAD D               ; HL = y * 80
     ; 3. Add 'x'
-    XCHG                ; DE = y * 80
+    XCHG                ; DE = y * 64
     LXI H, 8
     DAD SP
     MOV A, M            ; A = x
@@ -498,10 +495,10 @@ PRINT_CHAR_XY_C:
     MOV E, A
     MOV A, D
     ACI 0
-    MOV D, A            ; DE = (y * 80) + x
+    MOV D, A            ; DE = (y * 64) + x
     ; 4. Add Text RAM Base (0xA000)
     LXI H, 0xA000
-    DAD D               ; HL = 0xA000 + (y * 80) + x
+    DAD D               ; HL = 0xA000 + (y * 64) + x
     ; 5. Load 'c' and write
     XCHG                ; DE points to the VRAM target
     LXI H, 6
@@ -521,18 +518,15 @@ READ_CHAR_XY_C:
     DAD SP
     MOV L, M
     MVI H, 0            ; HL = y
-    ; 2. Fast calculation of: y * 80
+    ; 2. Fast calculation of: y * 64
     DAD H               ; y * 2
     DAD H               ; y * 4
     DAD H               ; y * 8
     DAD H               ; y * 16
-    MOV E, L
-    MOV D, H            ; DE = y * 16
     DAD H               ; y * 32
     DAD H               ; y * 64
-    DAD D               ; HL = y * 80
     ; 3. Add 'x'
-    XCHG                ; DE = y * 80
+    XCHG                ; DE = y * 64
     LXI H, 6
     DAD SP
     MOV A, M            ; A = x
@@ -540,10 +534,10 @@ READ_CHAR_XY_C:
     MOV E, A
     MOV A, D
     ACI 0
-    MOV D, A            ; DE = (y * 80) + x
+    MOV D, A            ; DE = (y * 64) + x
     ; 4. Add Text RAM Base (0xA000)
     LXI H, 0xA000
-    DAD D               ; HL = 0xA000 + (y * 80) + x
+    DAD D               ; HL = 0xA000 + (y * 64) + x
     ; 5. Read character
     MOV L, M            ; Return value in L
     MVI H, 0            ; H = 0
@@ -560,16 +554,13 @@ READ_PIXEL_XY_C:
     DAD SP
     MOV L, M
     MVI H, 0            ; HL = y
-    ; 2. Fast calculation of: y * 40
+    ; 2. Fast calculation of: y * 32
     DAD H               ; y * 2
     DAD H               ; y * 4
     DAD H               ; y * 8
-    PUSH H              ; Save (y * 8)
     DAD H               ; y * 16
     DAD H               ; y * 32
-    POP D               ; DE = y * 8
-    DAD D               ; HL = y * 40
-    PUSH H              ; Save (y * 40)
+    PUSH H              ; Save (y * 32)
     ; 3. Load 'x' (16-bit, as it can be > 255)
     LXI H, 8            ; Offset is 8 because we just pushed H
     DAD SP
@@ -580,12 +571,12 @@ READ_PIXEL_XY_C:
     MOV A, D ! ORA A ! RAR ! MOV D, A ! MOV A, E ! RAR ! MOV E, A ; x / 2
     MOV A, D ! ORA A ! RAR ! MOV D, A ! MOV A, E ! RAR ! MOV E, A ; x / 4
     MOV A, D ! ORA A ! RAR ! MOV D, A ! MOV A, E ! RAR ! MOV E, A ; DE = x / 8
-    ; 5. Add to y * 40
-    POP H               ; HL = y * 40
-    DAD D               ; HL = (y * 40) + (x / 8)
+    ; 5. Add to y * 32
+    POP H               ; HL = y * 32
+    DAD D               ; HL = (y * 32) + (x / 8)
     ; 6. Add Graphics RAM Base (0x4000)
     LXI D, 0x4000
-    DAD D               ; HL = 0x4000 + (y * 40) + (x / 8)
+    DAD D               ; HL = 0x4000 + (y * 32) + (x / 8)
     ; 7. Read VRAM byte
     MOV B, M            ; B = VRAM byte
     ; 8. Calculate x % 8 and get bitmask
@@ -1504,8 +1495,8 @@ BACKSPACE:
     ORA A
     JNZ BS_DEC_X
     
-    ; Wrap X to 79, Decrement Y
-    MVI A, 79
+    ; Wrap X to 63, Decrement Y
+    MVI A, 63
     STA VAR_CURSOR_X
     LDA VAR_CURSOR_Y
     DCR A
@@ -1535,7 +1526,7 @@ BS_DONE:
 ; ---------------------------------------------------------
 CLEAR_SCREEN:
     LXI H, 0xA000
-    LXI B, 2400         ; 80 columns * 30 rows = 2400 bytes
+    LXI B, 1920         ; 64 columns * 30 rows = 1920 bytes
 CS_LOOP:
     MVI M, 0x20         ; Space character
     INX H
@@ -1572,7 +1563,7 @@ PRINT_CHAR:
     ; Advance X Coordinate
     LDA VAR_CURSOR_X
     INR A
-    CPI 80              ; Check if we hit the end of the line (80 cols)
+    CPI 64              ; Check if we hit the end of the line (64 cols)
     JC PC_NO_WRAP
     
     ; Handle Line Wrap
@@ -1609,9 +1600,9 @@ NEW_LINE:
     JC NL_NO_WRAP
     
     ; --- Scroll Screen Up ---
-    LXI H, 0xA050       ; Source (Row 1)
+    LXI H, 0xA040       ; Source (Row 1)
     LXI D, 0xA000       ; Destination (Row 0)
-    LXI B, 2320         ; 80 * 29 = 2320 bytes
+    LXI B, 1856         ; 64 * 29 = 1856 bytes
 NL_SCROLL_LOOP:
     MOV A, M
     STAX D
@@ -1623,8 +1614,8 @@ NL_SCROLL_LOOP:
     JNZ NL_SCROLL_LOOP
     
     ; --- Clear Bottom Row ---
-    ; DE now points to 0xA910 (Start of Row 29)
-    LXI B, 80           ; 80 columns
+    ; DE now points to 0xA740 (Start of Row 29)
+    LXI B, 64           ; 64 columns
 NL_CLEAR_LOOP:
     MVI A, 0x20         ; Space character
     STAX D
@@ -1638,20 +1629,17 @@ NL_CLEAR_LOOP:
 NL_NO_WRAP:
     STA VAR_CURSOR_Y
     
-    ; Calculate Memory Pointer: 0xA000 + (Y * 80)
+    ; Calculate Memory Pointer: 0xA000 + (Y * 64)
     MOV L, A
     MVI H, 0
     DAD H               ; HL = Y * 2
     DAD H               ; HL = Y * 4
     DAD H               ; HL = Y * 8
     DAD H               ; HL = Y * 16
-    MOV E, L
-    MOV D, H            ; DE = Y * 16
     DAD H               ; HL = Y * 32
     DAD H               ; HL = Y * 64
-    DAD D               ; HL = Y * 80
     LXI D, 0xA000
-    DAD D               ; HL = 0xA000 + Y * 80
+    DAD D               ; HL = 0xA000 + Y * 64
     SHLD VAR_CURSOR_PTR
     
     CALL SYNC_CURSOR

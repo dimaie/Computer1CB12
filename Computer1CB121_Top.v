@@ -48,8 +48,9 @@ module Computer1CB121_Top(
 // Internal control signals
 wire step_mode = 1'b0; // Disabled for now, will map to keyboard later
 
-// 25.175 MHz clock for VGA and system
-wire clk_25m;
+wire clk_21mhz;
+// PLL generated 21.4772 MHz clock for system and VGA (Phase-Aligned)
+wire clk_sys = clk_21mhz;
 
 // Internal 16-bit data bus
 reg[15:0] bus;
@@ -135,7 +136,7 @@ assign LEDR = port_out[7:0];     // Connect LEDs to output port
 reg [7:0] kb_data;
 reg       kb_ready;
 
-always @(posedge clk_25m or posedge rst) begin
+always @(posedge clk_sys or posedge rst) begin
     if (rst) begin
         kb_data <= 8'b0;
         kb_ready <= 1'b0;
@@ -153,7 +154,7 @@ end
 reg [7:0] uart_data_in;
 reg       uart_ready;
 
-always @(posedge clk_25m or posedge rst) begin
+always @(posedge clk_sys or posedge rst) begin
     if (rst) begin
         uart_data_in <= 8'b0;
         uart_ready <= 1'b0;
@@ -230,7 +231,7 @@ end
 wire clk_24mhz;
 usb_vga_pll usb_vga_pll_inst (
 	.inclk0(CLOCK_21),
-	.c0(clk_25m),
+	.c0(clk_21mhz), // Phase-aligned 21.477 MHz
 	.c1(clk_24mhz)
 );
 
@@ -242,7 +243,7 @@ end
 
 // Step button controller for manual clock stepping
 step_button step_button(
-	.clk(clk_25m),
+	.clk(clk_sys),
 	.rst(rst),
 	.step_mode(step_mode),
 	.step_clk_pulse(step_clk_pulse),
@@ -253,7 +254,7 @@ step_button step_button(
 clock clock(
 	.hlt(hlt | hlt_m),
 	.step_pulse(step_clk_pulse),
-	.clk_in(clk_25m),
+	.clk_in(clk_sys),
 	.clk_out(clk)
 );
 
@@ -349,7 +350,7 @@ controller controller(
 
 // PS/2 Keyboard Interface
 ps2_keyboard ps2_keyboard_inst(
-	.clk(clk_25m),
+	.clk(clk_sys),
 	.rst(~RESET_N), // IMPORTANT: Use only physical reset to prevent F5 suicide glitch
 	.ps2_clk(PS2_CLK),
 	.ps2_dat(PS2_DAT),
@@ -360,9 +361,9 @@ ps2_keyboard ps2_keyboard_inst(
 
 // UART Interface
 uart #(
-	.CLOCKS_PER_BIT(219) // 25.175MHz / 115200 baud
+	.CLOCKS_PER_BIT(186) // 21.477MHz / 115200 baud
 ) uart_inst (
-	.clk(clk_25m),
+	.clk(clk_sys),
 	.rst(rst),
 	.rx(UART_RXD),
 	.tx(UART_TXD),
@@ -375,7 +376,7 @@ uart #(
 
 // VGA Display Controller
 display_controller vga_ctrl(
-	.clk(clk_25m),
+	.clk(clk_sys),
 	.rst(rst),
 	.vga_gfx_addr(vga_gfx_addr),
 	.vga_gfx_data(vga_gfx_data),
@@ -400,7 +401,7 @@ display_controller vga_ctrl(
 
 // USB Mouse Integration
 sap3_mouse_wrapper mouse_ctrl (
-	.clk(clk_25m), // Use free-running clock for CDC synchronizer, not gated CPU clock
+	.clk(clk_sys), // Use free-running clock for CDC synchronizer, not gated CPU clock
 	.usbclk(clk_12mhz),
 	.rst(rst),
 	.usb_dp(USBP2),

@@ -49,8 +49,8 @@ module memory(
 
     // Write enables for specific memory blocks
     wire we_ram  = ram_we && (mar >= 16'h2000 && mar <= 16'h3FFF); // 8KB Program RAM
-    wire we_gfx  = ram_we && (mar >= 16'h4000 && mar <= 16'h657F); // Strictly 9600 bytes (320x240)
-    wire we_txt  = ram_we && (mar >= 16'hA000 && mar <= 16'hA95F); // Strictly 2400 bytes (80x30)
+    wire we_gfx  = ram_we && (mar >= 16'h4000 && mar <= 16'h5DFF); // Strictly 7680 bytes (256x240)
+    wire we_txt  = ram_we && (mar >= 16'hA000 && mar <= 16'hA77F); // Strictly 1920 bytes (64x30)
     wire we_font = ram_we && (mar >= 16'hB000 && mar <= 16'hB7FF); // 2KB Font space
 
     // -------------------------------------------------------------------------
@@ -64,12 +64,12 @@ module memory(
         .clk(clk), .we(we_ram), .addr(mar[12:0]), .d(bus[7:0]), .q(ram_out)
     );
 
-    vga_shared_tdp_ram #(.ADDR_WIDTH(14), .DEPTH(9600), .INIT_FILE("")) gfx_ram_inst (
+    vga_shared_tdp_ram #(.ADDR_WIDTH(14), .DEPTH(7680), .INIT_FILE("")) gfx_ram_inst (
         .clk(clk), .we_a(we_gfx), .addr_a(mar[13:0]), .d_a(bus[7:0]), .q_a(gfx_ram_out),
         .addr_b(vga_gfx_addr[13:0]), .q_b(vga_gfx_data)
     );
 
-    vga_shared_tdp_ram #(.ADDR_WIDTH(12), .DEPTH(2400), .INIT_FILE("")) txt_ram_inst (
+    vga_shared_tdp_ram #(.ADDR_WIDTH(12), .DEPTH(1920), .INIT_FILE("")) txt_ram_inst (
         .clk(clk), .we_a(we_txt), .addr_a(mar[11:0]), .d_a(bus[7:0]), .q_a(txt_ram_out),
         .addr_b(vga_txt_addr), .q_b(vga_txt_data)
     );
@@ -118,9 +118,9 @@ module memory(
             out = rom_out;
         else if (mar_d1 >= 16'h2000 && mar_d1 <= 16'h3FFF)
             out = ram_out;
-        else if (mar_d1 >= 16'h4000 && mar_d1 <= 16'h657F)
+        else if (mar_d1 >= 16'h4000 && mar_d1 <= 16'h5DFF)
             out = gfx_ram_out;
-        else if (mar_d1 >= 16'hA000 && mar_d1 <= 16'hA95F)
+        else if (mar_d1 >= 16'hA000 && mar_d1 <= 16'hA77F)
             out = txt_ram_out;
         else if (mar_d1 == 16'hC001)
             out = ink_color;

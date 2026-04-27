@@ -1,6 +1,6 @@
 ; =========================================================================
 ; SAP-3 Mouse Drawing Program
-; Draws pixels on the VGA Graphics Layer (320x240) using the mouse.
+; Draws pixels on the VGA Graphics Layer (256x240) using the mouse.
 ; =========================================================================
 
 GFX_RAM   EQU 4000h
@@ -20,9 +20,9 @@ CUR_STYLE EQU 0C005h
     MVI A, 03h
     STA CUR_STYLE
 
-    ; 1. Clear Graphics RAM (4000h to 657Fh = 9600 bytes = 2580h)
+    ; 1. Clear Graphics RAM (4000h to 5DFFh = 7680 bytes = 1E00h)
     LXI H, GFX_RAM
-    LXI D, 9600
+    LXI D, 7680
 Clear_Gfx:
     MVI M, 00h
     INX H
@@ -36,7 +36,7 @@ Main_Loop:
     IN MOUSE_X_H
     MOV B, A
     IN MOUSE_X_L
-    MOV C, A      ; BC = Mouse X (0-319)
+    MOV C, A      ; BC = Mouse X (0-255)
     
     IN MOUSE_Y_L
     MOV D, A      ; D = Mouse Y (0-239)
@@ -65,17 +65,14 @@ Main_Loop:
     PUSH PSW      ; Save button state to the stack
 
     ; --- Draw Pixel ---
-    ; Calculate: HL = (Y * 40)
+    ; Calculate: HL = (Y * 32)
     MOV L, D
     MVI H, 0      ; HL = Y
     DAD H         ; Y * 2
     DAD H         ; Y * 4
     DAD H         ; Y * 8
-    PUSH H        ; Save (Y * 8)
     DAD H         ; Y * 16
     DAD H         ; Y * 32
-    POP D         ; DE = (Y * 8)
-    DAD D         ; HL = (Y * 32) + (Y * 8) = Y * 40
 
     ; Calculate: BC = X / 8
     PUSH B        ; Save original X for the bitmask
@@ -83,7 +80,7 @@ Main_Loop:
     MOV A, B ! ORA A ! RAR ! MOV B, A ! MOV A, C ! RAR ! MOV C, A
     MOV A, B ! ORA A ! RAR ! MOV B, A ! MOV A, C ! RAR ! MOV C, A
     
-    DAD B         ; HL = (Y * 40) + (X / 8)
+    DAD B         ; HL = (Y * 32) + (X / 8)
     LXI D, GFX_RAM
     DAD D         ; HL now points to the exact byte in Video RAM!
 
