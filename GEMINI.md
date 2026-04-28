@@ -39,6 +39,7 @@ The hardware is based on the OneChipBook laptop. `OneChipBook12-TechRef.pdf` is 
 - Memory is initialized from a `program.hex` hex file.
 - The ALU evaluates arithmetic/logic operations on the positive clock edge but updates processor flags (Z, C, P, S) on the negative clock edge.
 - Video Mixer Logic: The VGA display pipeline reads both Text and Graphics RAM simultaneously. Text pixels are overlaid transparently on top of graphics pixels, eliminating the need for a dedicated video mode register.
+- **Custom Instructions (Hardware Math):** The standard 8080 ISA has been extended. The unused opcode `0xED` is mapped to `MUL B`. It performs a hardware-accelerated 8-bit unsigned multiplication of the Accumulator (`A`) and register `B`, storing the 16-bit product in the `HL` register pair.
 
 ## System Monitor (ROM) Specification
 A ROM-based system monitor program is being developed gradually to provide basic debugging, execution, and API functionalities.

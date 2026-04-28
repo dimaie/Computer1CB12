@@ -927,6 +927,26 @@ always @(*) begin
 				end
 			end
 
+			// MUL B - Multiply Accumulator by B, store in HL (0xED / 355)
+			8'o355: begin
+				if (stage == 3) begin
+					ctrl_word[REG_RD_SEL4:REG_RD_SEL0] = REG_BC_B;
+					ctrl_word[REG_OE] = 1'b1;
+					ctrl_word[ALU_TMP_WE] = 1'b1;
+				end else if (stage == 4) begin
+					ctrl_word[ALU_OP4:ALU_OP0] = 5'b10010; // OP_MUL_L
+					ctrl_word[ALU_OE] = 1'b1;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_HL_L;
+					ctrl_word[REG_WE] = 1'b1;
+				end else if (stage == 5) begin
+					ctrl_word[ALU_OP4:ALU_OP0] = 5'b10011; // OP_MUL_H
+					ctrl_word[ALU_OE] = 1'b1;
+					ctrl_word[REG_WR_SEL4:REG_WR_SEL0] = REG_HL_H;
+					ctrl_word[REG_WE] = 1'b1;
+					stage_rst = 1'b1;
+				end
+			end
+
 			// PUSH Rs
 			// opcode[5:4] - Extended Register
 			8'o3?5: begin

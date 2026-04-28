@@ -74,6 +74,8 @@ localparam OP_STC = 5'b01110;  // Set carry
 localparam OP_CMC = 5'b01111;  // Complement carry
 localparam OP_INR = 5'b10000;  // Increment accumulator
 localparam OP_DCR = 5'b10001;  // Decrement accumulator
+localparam OP_MUL_L = 5'b10010; // Output Multiply Low Byte
+localparam OP_MUL_H = 5'b10011; // Output Multiply High Byte
 
 // Flag calculations based on accumulator value
 assign flg_c = (carry == 1'b1);  // Carry flag
@@ -209,6 +211,17 @@ always @(negedge clk, posedge rst) begin
 end
 
 assign flags = flg;  // Output flags register
-assign out = acc;  // Output accumulator value
+
+wire [15:0] mul_prod;
+
+vedic8x8 hw_multiplier (
+	.a(acc),
+	.b(tmp),
+	.prod(mul_prod)
+);
+
+assign out = (op == OP_MUL_L) ? mul_prod[7:0] :
+             (op == OP_MUL_H) ? mul_prod[15:8] :
+             acc;
 
 endmodule
