@@ -35,6 +35,16 @@ VAR_BP_ACTIVE:  DS 1
 VAR_BP_ADDR:    DS 2
 VAR_BP_BYTES:   DS 3
 VAR_DISASM_PTR: DS 2
+VAR_DL_X0:      DS 2
+VAR_DL_Y0:      DS 2
+VAR_DL_X1:      DS 2
+VAR_DL_Y1:      DS 2
+VAR_DL_DX:      DS 2
+VAR_DL_DY:      DS 2
+VAR_DL_SX:      DS 2
+VAR_DL_SY:      DS 2
+VAR_DL_ERR:     DS 2
+VAR_DL_COLOR:   DS 1
 
 ; ---------------------------------------------------------
 ; C-Compiler ROM API Jump Table (Fixed Addresses)
@@ -43,15 +53,17 @@ ORG 0x0010
 API_PRINT_CHAR:    JMP PRINT_CHAR_C
 API_READ_KEY:      JMP READ_KEY_C
 API_CLEAR_SCREEN:  JMP CLEAR_SCREEN_C
-API_PRINT_CHAR_XY: JMP PRINT_CHAR_XY_C
+API_PUT_CHAR_XY:   JMP PUT_CHAR_XY_C
 API_READ_CHAR_XY:  JMP READ_CHAR_XY_C
 API_READ_PIXEL_XY: JMP READ_PIXEL_XY_C
 API_CHECK_KEY:     JMP CHECK_KEY_C
+API_DRAW_LINE:     JMP DRAW_LINE_C
+API_PUT_PIXEL_XY:  JMP PUT_PIXEL_XY_C
 
 ; ---------------------------------------------------------
 ; Main Program
 ; ---------------------------------------------------------
-ORG 0x0028
+ORG 0x002B
 START:
     LXI SP, 0x3FFF      ; Initialize Stack Pointer
     
@@ -469,8 +481,8 @@ _CS_GFX_LOOP:
     JNZ _CS_GFX_LOOP
     RET
 
-; void print_char_xy(int c, int x, int y) @ 0x0019
-PRINT_CHAR_XY_C:
+; void put_char_xy(int c, int x, int y) @ 0x0019
+PUT_CHAR_XY_C:
     PUSH B
     PUSH D
     ; 1. Load 'y'
@@ -615,6 +627,313 @@ CHECK_KEY_C:
     RET
 _CK_EMPTY:
     LXI H, 0
+    RET
+
+; void draw_line(int x0, int y0, int x1, int y1, int color) @ 0x0025
+DRAW_LINE_C:
+    PUSH B
+    PUSH D
+    PUSH H
+    
+    LXI H, 8
+    DAD SP
+    MOV E, M
+    INX H
+    MOV D, M
+    XCHG
+    SHLD VAR_DL_X0
+    
+    LXI H, 10
+    DAD SP
+    MOV E, M
+    INX H
+    MOV D, M
+    XCHG
+    SHLD VAR_DL_Y0
+    
+    LXI H, 12
+    DAD SP
+    MOV E, M
+    INX H
+    MOV D, M
+    XCHG
+    SHLD VAR_DL_X1
+    
+    LXI H, 14
+    DAD SP
+    MOV E, M
+    INX H
+    MOV D, M
+    XCHG
+    SHLD VAR_DL_Y1
+    
+    LXI H, 16
+    DAD SP
+    MOV A, M
+    STA VAR_DL_COLOR
+    
+    ; dx = abs(x1 - x0)
+    LHLD VAR_DL_X1
+    XCHG
+    LHLD VAR_DL_X0
+    MOV A, E
+    SUB L
+    MOV C, A
+    MOV A, D
+    SBB H
+    MOV B, A
+    JM DL_X_NEG
+    LXI H, 1
+    SHLD VAR_DL_SX
+    JMP DL_X_DONE
+DL_X_NEG:
+    LXI H, 0xFFFF       ; -1
+    SHLD VAR_DL_SX
+    MOV A, B
+    CMA
+    MOV B, A
+    MOV A, C
+    CMA
+    MOV C, A
+    INX B
+DL_X_DONE:
+    MOV L, C
+    MOV H, B
+    SHLD VAR_DL_DX
+    
+    ; dy = -abs(y1 - y0)
+    LHLD VAR_DL_Y1
+    XCHG
+    LHLD VAR_DL_Y0
+    MOV A, E
+    SUB L
+    MOV C, A
+    MOV A, D
+    SBB H
+    MOV B, A
+    JM DL_Y_NEG
+    LXI H, 1
+    SHLD VAR_DL_SY
+    ; negate BC
+    MOV A, B
+    CMA
+    MOV B, A
+    MOV A, C
+    CMA
+    MOV C, A
+    INX B
+    JMP DL_Y_DONE
+DL_Y_NEG:
+    LXI H, 0xFFFF       ; -1
+    SHLD VAR_DL_SY
+DL_Y_DONE:
+    MOV L, C
+    MOV H, B
+    SHLD VAR_DL_DY
+    
+    ; err = dx + dy
+    LHLD VAR_DL_DX
+    XCHG
+    LHLD VAR_DL_DY
+    DAD D
+    SHLD VAR_DL_ERR
+    
+DL_LOOP:
+    CALL DRAW_PIXEL
+    
+    ; check x0 == x1 && y0 == y1
+    LHLD VAR_DL_X0
+    XCHG
+    LHLD VAR_DL_X1
+    MOV A, L
+    CMP E
+    JNZ DL_CONT
+    MOV A, H
+    CMP D
+    JNZ DL_CONT
+    
+    LHLD VAR_DL_Y0
+    XCHG
+    LHLD VAR_DL_Y1
+    MOV A, L
+    CMP E
+    JNZ DL_CONT
+    MOV A, H
+    CMP D
+    JNZ DL_CONT
+    JMP DL_END
+    
+DL_CONT:
+    LHLD VAR_DL_ERR
+    DAD H               ; e2 = err * 2
+    PUSH H              ; Save e2
+    
+    ; if (e2 >= dy)
+    XCHG
+    LHLD VAR_DL_DY
+    MOV A, E
+    SUB L
+    MOV C, A
+    MOV A, D
+    SBB H
+    MOV B, A
+    JM DL_SKIP_X
+    
+    ; err += dy
+    LHLD VAR_DL_ERR
+    XCHG
+    LHLD VAR_DL_DY
+    DAD D
+    SHLD VAR_DL_ERR
+    
+    ; x0 += sx
+    LHLD VAR_DL_X0
+    XCHG
+    LHLD VAR_DL_SX
+    DAD D
+    SHLD VAR_DL_X0
+    
+DL_SKIP_X:
+    POP D               ; Restore e2 to DE
+    
+    ; if (e2 <= dx)
+    LHLD VAR_DL_DX
+    MOV A, E
+    SUB L
+    MOV C, A
+    MOV A, D
+    SBB H
+    MOV B, A
+    
+    MOV A, B
+    ORA C
+    JZ DL_UPDATE_Y
+    MOV A, B
+    ORA A
+    JM DL_UPDATE_Y
+    JMP DL_SKIP_Y
+    
+DL_UPDATE_Y:
+    ; err += dx
+    LHLD VAR_DL_ERR
+    XCHG
+    LHLD VAR_DL_DX
+    DAD D
+    SHLD VAR_DL_ERR
+    
+    ; y0 += sy
+    LHLD VAR_DL_Y0
+    XCHG
+    LHLD VAR_DL_SY
+    DAD D
+    SHLD VAR_DL_Y0
+    
+DL_SKIP_Y:
+    JMP DL_LOOP
+    
+DL_END:
+    POP H
+    POP D
+    POP B
+    RET
+    
+DRAW_PIXEL:
+    LHLD VAR_DL_X0
+    MOV A, H
+    ORA A
+    JNZ DP_SKIP         ; Out of bounds check (X < 0 || X > 255)
+    LHLD VAR_DL_Y0
+    MOV A, H
+    ORA A
+    JNZ DP_SKIP         ; Out of bounds check (Y < 0 || Y > 255)
+    MOV A, L
+    CPI 240
+    JNC DP_SKIP         ; Out of bounds check (Y >= 240)
+    
+    ; Calculate VRAM offset (Y * 32)
+    MOV L, A
+    MVI H, 0
+    DAD H
+    DAD H
+    DAD H
+    DAD H
+    DAD H
+    
+    ; Calculate (X / 8)
+    LDA VAR_DL_X0
+    MOV E, A
+    MVI D, 0
+    MOV A, E
+    RAR                 ; Rotate Right (Carry gets shifted in...)
+    RAR
+    RAR
+    ANI 0x1F            ; Mask out garbage bits to ensure clean X/8
+    MOV E, A
+    
+    DAD D
+    LXI D, 0x4000       ; Graphics RAM Base Address
+    DAD D
+    
+    ; Fetch target bit mask mapping using X % 8
+    LDA VAR_DL_X0
+    ANI 0x07
+    LXI D, _RP_MASKS
+    ADD E
+    MOV E, A
+    MOV A, D
+    ACI 0
+    MOV D, A
+    LDAX D
+    
+    MOV B, A            ; Store bitmask in B
+    LDA VAR_DL_COLOR
+    ORA A
+    JZ DP_CLEAR
+DP_SET:
+    MOV A, M
+    ORA B
+    MOV M, A
+    RET
+DP_CLEAR:
+    MOV A, B
+    CMA
+    ANA M
+    MOV M, A
+DP_SKIP:
+    RET
+
+; void put_pixel_xy(int x, int y, int color) @ 0x0028
+PUT_PIXEL_XY_C:
+    PUSH B
+    PUSH D
+    PUSH H
+    
+    LXI H, 8
+    DAD SP
+    MOV E, M
+    INX H
+    MOV D, M
+    XCHG
+    SHLD VAR_DL_X0
+    
+    LXI H, 10
+    DAD SP
+    MOV E, M
+    INX H
+    MOV D, M
+    XCHG
+    SHLD VAR_DL_Y0
+    
+    LXI H, 12
+    DAD SP
+    MOV A, M
+    STA VAR_DL_COLOR
+    
+    CALL DRAW_PIXEL
+    
+    POP H
+    POP D
+    POP B
     RET
 
 ; ---------------------------------------------------------
