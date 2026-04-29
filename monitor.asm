@@ -53,8 +53,11 @@ ORG 0x0010
 API_PRINT_CHAR:    JMP PRINT_CHAR_C
 API_READ_KEY:      JMP READ_KEY_C
 API_CLEAR_SCREEN:  JMP CLEAR_SCREEN_C
-API_PUT_CHAR_XY:   JMP PUT_CHAR_XY_C
-API_READ_CHAR_XY:  JMP READ_CHAR_XY_C
+API_PRINT_STRING:  JMP PRINT_STRING_C
+API_SET_CURSOR_XY: JMP SET_CURSOR_XY_C
+API_GET_CURSOR_XY: JMP GET_CURSOR_XY_C
+API_READ_CHAR:     JMP READ_CHAR_C
+API_SET_CURSOR_STYLE: JMP SET_CURSOR_STYLE_C
 API_READ_PIXEL_XY: JMP READ_PIXEL_XY_C
 API_CHECK_KEY:     JMP CHECK_KEY_C
 API_DRAW_LINE:     JMP DRAW_LINE_C
@@ -63,7 +66,7 @@ API_PUT_PIXEL_XY:  JMP PUT_PIXEL_XY_C
 ; ---------------------------------------------------------
 ; Main Program
 ; ---------------------------------------------------------
-ORG 0x002B
+ORG 0x0034
 START:
     LXI SP, 0x3FFF      ; Initialize Stack Pointer
     
@@ -481,83 +484,92 @@ _CS_GFX_LOOP:
     JNZ _CS_GFX_LOOP
     RET
 
-; void put_char_xy(int c, int x, int y) @ 0x0019
-PUT_CHAR_XY_C:
+; void print_string(char* str) @ 0x0019
+PRINT_STRING_C:
     PUSH B
     PUSH D
-    ; 1. Load 'y'
-    LXI H, 10
+    PUSH H
+    LXI H, 8
+    DAD SP
+    MOV E, M
+    INX H
+    MOV D, M
+_PSC_LOOP:
+    LDAX D
+    ORA A
+    JZ _PSC_DONE
+    CALL PRINT_CHAR
+    INX D
+    JMP _PSC_LOOP
+_PSC_DONE:
+    POP H
+    POP D
+    POP B
+    RET
+
+; void set_cursor_xy(int x, int y) @ 0x001C
+SET_CURSOR_XY_C:
+    PUSH B
+    PUSH D
+    LXI H, 6
     DAD SP
     MOV A, M
-    MOV L, A
-    MVI H, 0            ; HL = y
-    ; 2. Fast calculation of: y * 64
-    DAD H               ; y * 2
-    DAD H               ; y * 4
-    DAD H               ; y * 8
-    DAD H               ; y * 16
-    DAD H               ; y * 32
-    DAD H               ; y * 64
-    ; 3. Add 'x'
-    XCHG                ; DE = y * 64
+    STA VAR_CURSOR_X
     LXI H, 8
     DAD SP
-    MOV A, M            ; A = x
-    ADD E
+    MOV A, M
+    STA VAR_CURSOR_Y
+    
+    ; Calculate Memory Pointer: 0xA000 + (Y * 64) + X
+    MOV L, A
+    MVI H, 0
+    DAD H
+    DAD H
+    DAD H
+    DAD H
+    DAD H
+    DAD H
+    LDA VAR_CURSOR_X
     MOV E, A
-    MOV A, D
-    ACI 0
-    MOV D, A            ; DE = (y * 64) + x
-    ; 4. Add Text RAM Base (0xA000)
-    LXI H, 0xA000
-    DAD D               ; HL = 0xA000 + (y * 64) + x
-    ; 5. Load 'c' and write
-    XCHG                ; DE points to the VRAM target
-    LXI H, 6
-    DAD SP
-    MOV A, M            ; A = c
-    STAX D              ; Write 'c' directly to VRAM target
+    MVI D, 0
+    DAD D
+    LXI D, 0xA000
+    DAD D
+    SHLD VAR_CURSOR_PTR
+    
+    CALL SYNC_CURSOR
     POP D
     POP B
     RET
 
-; int read_char_xy(int x, int y) @ 0x001C
-READ_CHAR_XY_C:
+; int get_cursor_xy(void) @ 0x001F
+GET_CURSOR_XY_C:
+    LDA VAR_CURSOR_X
+    MOV L, A
+    LDA VAR_CURSOR_Y
+    MOV H, A
+    RET
+
+; int read_char(void) @ 0x0022
+READ_CHAR_C:
+    LHLD VAR_CURSOR_PTR
+    MOV L, M
+    MVI H, 0
+    RET
+
+; void set_cursor_style(int style) @ 0x0025
+SET_CURSOR_STYLE_C:
     PUSH B
     PUSH D
-    ; 1. Load 'y'
-    LXI H, 8
-    DAD SP
-    MOV L, M
-    MVI H, 0            ; HL = y
-    ; 2. Fast calculation of: y * 64
-    DAD H               ; y * 2
-    DAD H               ; y * 4
-    DAD H               ; y * 8
-    DAD H               ; y * 16
-    DAD H               ; y * 32
-    DAD H               ; y * 64
-    ; 3. Add 'x'
-    XCHG                ; DE = y * 64
     LXI H, 6
     DAD SP
-    MOV A, M            ; A = x
-    ADD E
-    MOV E, A
-    MOV A, D
-    ACI 0
-    MOV D, A            ; DE = (y * 64) + x
-    ; 4. Add Text RAM Base (0xA000)
-    LXI H, 0xA000
-    DAD D               ; HL = 0xA000 + (y * 64) + x
-    ; 5. Read character
-    MOV L, M            ; Return value in L
-    MVI H, 0            ; H = 0
+    MOV A, M
+    STA 0xC005
     POP D
     POP B
     RET
 
-; int read_pixel_xy(int x, int y) @ 0x001F
+; int read_pixel_xy(int x, int y) @ 0x0028
 READ_PIXEL_XY_C:
     PUSH B
     PUSH D
@@ -616,7 +628,7 @@ _RP_DONE:
 _RP_MASKS:
     DB 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01
 
-; int check_key() @ 0x0022
+; int check_key() @ 0x002B
 CHECK_KEY_C:
     IN 0x01
     ANI 0x01
@@ -629,7 +641,7 @@ _CK_EMPTY:
     LXI H, 0
     RET
 
-; void draw_line(int x0, int y0, int x1, int y1, int color) @ 0x0025
+; void draw_line(int x0, int y0, int x1, int y1, int color) @ 0x002E
 DRAW_LINE_C:
     PUSH B
     PUSH D
@@ -902,7 +914,7 @@ DP_CLEAR:
 DP_SKIP:
     RET
 
-; void put_pixel_xy(int x, int y, int color) @ 0x0028
+; void put_pixel_xy(int x, int y, int color) @ 0x0031
 PUT_PIXEL_XY_C:
     PUSH B
     PUSH D
