@@ -56,13 +56,16 @@ module display_controller(
     reg [9:0] x_cnt;
     reg [9:0] y_cnt;
     reg [5:0] blink_cnt; // 64-frame counter for ~1Hz blink cycle
+    reg       txt_inverse; // 1-cycle pipeline register for inverse text attribute
 
     always @(posedge clk) begin
         if (rst) begin
             x_cnt <= 0;
             y_cnt <= 0;
             blink_cnt <= 0;
+            txt_inverse <= 0;
         end else begin
+            txt_inverse <= vga_txt_data[7]; // Capture MSB for the video mixer stage
             if (x_cnt == H_TOTAL - 1) begin
                 x_cnt <= 0;
                 if (y_cnt == V_TOTAL - 1) begin
@@ -103,8 +106,8 @@ module display_controller(
     assign vga_gfx_addr  = (gfx_row << 5) + {9'b0, safe_h_g[8:4]}; // Scaled_Row * 32 + Scaled_Col
 
     // Stage 2 -> Combinational Font Address Calculation
-    // Stretch the 8x8 font vertically by repeating each scanline twice
-    assign vga_font_addr = {vga_txt_data[7:0], y_fetch_f[3:1]};
+    // Mask to 7 bits (128 chars) and stretch the 8x8 font vertically
+    assign vga_font_addr = {1'b0, vga_txt_data[6:0], y_fetch_f[3:1]};
 
     // Stage 4/5 -> Final Extraction and Video Mixer
     wire [9:0] local_x = (x_cnt >= 32 && x_cnt < 544) ? (x_cnt - 32) : 10'd0;
@@ -118,7 +121,7 @@ module display_controller(
     wire cursor_shape_active = (cursor_style == 2'd3) || (cursor_style == 2'd2) || 
                                (cursor_style == 2'd1 && y_cnt[3] == 1'b1);
     wire show_cursor    = in_cursor_cell && cursor_shape_active && (blink_cnt[5] || cursor_style == 2'd3) && (cursor_style != 2'd0);
-    wire text_pixel     = raw_text_pixel ^ show_cursor;
+    wire text_pixel     = raw_text_pixel ^ show_cursor ^ txt_inverse;
 
     // Layer [1] = Graphics, Layer [0] = Text
     wire draw_txt = (layer_enable[0] && text_pixel && in_gfx_bounds);

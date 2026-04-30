@@ -96,6 +96,13 @@ void put_pixel_xy(int x, int y, int color) {
     }
 }
 
+void set_inverse(int enable) {
+    asm {
+        POP H       ; Discard 'enable' shadow backup
+        JMP 0034H
+    }
+}
+
 // Blocks CPU execution until the VGA beam enters the Vertical Blanking period.
 int wait_vblank() {
     asm {

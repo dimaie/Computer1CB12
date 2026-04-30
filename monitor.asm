@@ -45,6 +45,7 @@ VAR_DL_SX:      DS 2
 VAR_DL_SY:      DS 2
 VAR_DL_ERR:     DS 2
 VAR_DL_COLOR:   DS 1
+VAR_INVERSE_ATTR: DS 1
 
 ; ---------------------------------------------------------
 ; C-Compiler ROM API Jump Table (Fixed Addresses)
@@ -62,11 +63,12 @@ API_READ_PIXEL_XY: JMP READ_PIXEL_XY_C
 API_CHECK_KEY:     JMP CHECK_KEY_C
 API_DRAW_LINE:     JMP DRAW_LINE_C
 API_PUT_PIXEL_XY:  JMP PUT_PIXEL_XY_C
+API_SET_INVERSE:   JMP SET_INVERSE_C
 
 ; ---------------------------------------------------------
 ; Main Program
 ; ---------------------------------------------------------
-ORG 0x0034
+ORG 0x0037
 START:
     LXI SP, 0x3FFF      ; Initialize Stack Pointer
     
@@ -82,6 +84,7 @@ START:
     ; Clear active breakpoint
     XRA A
     STA VAR_BP_ACTIVE
+    STA VAR_INVERSE_ATTR
     
     CALL CLEAR_SCREEN
     
@@ -953,6 +956,22 @@ PUT_PIXEL_XY_C:
     CALL DRAW_PIXEL
     
     POP H
+    POP D
+    POP B
+    RET
+
+; void set_inverse(int enable) @ 0x0034
+SET_INVERSE_C:
+    PUSH B
+    PUSH D
+    LXI H, 6
+    DAD SP
+    MOV A, M
+    ORA A
+    JZ _SI_OFF
+    MVI A, 0x80
+_SI_OFF:
+    STA VAR_INVERSE_ATTR
     POP D
     POP B
     RET
@@ -1897,9 +1916,16 @@ PRINT_CHAR:
     CPI 0x0A            ; Line Feed (\n)
     JZ PC_LF
     
+    ; Apply Inverse Attribute Mask
+    PUSH D
+    MOV D, A            ; Save character in D
+    LDA VAR_INVERSE_ATTR
+    ORA D               ; Apply inverse bit
+    
     ; Write Character to Text RAM
     LHLD VAR_CURSOR_PTR
     MOV M, A
+    POP D
     
     ; Advance Pointer
     INX H
