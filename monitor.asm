@@ -221,6 +221,15 @@ CMD_GO:
     ; Store parsed address into VAR_REGS PC
     SHLD VAR_REGS + 10
     
+    ; Push Monitor Return Address onto the User's Stack
+    LHLD VAR_REGS + 8
+    SPHL
+    LXI H, MAIN_LOOP
+    PUSH H
+    LXI H, 0
+    DAD SP
+    SHLD VAR_REGS + 8
+    
 GO_EXECUTE:
     ; Context Switch Trampoline
     LHLD VAR_REGS + 8   ; Load User's SP
@@ -1883,6 +1892,11 @@ PRINT_CHAR:
     PUSH H
     PUSH PSW
     
+    CPI 0x0D            ; Carriage Return (\r)
+    JZ PC_CR
+    CPI 0x0A            ; Line Feed (\n)
+    JZ PC_LF
+    
     ; Write Character to Text RAM
     LHLD VAR_CURSOR_PTR
     MOV M, A
@@ -1904,6 +1918,28 @@ PRINT_CHAR:
 PC_NO_WRAP:
     STA VAR_CURSOR_X
     CALL SYNC_CURSOR
+    JMP PC_DONE
+
+PC_CR:
+    MVI A, 0
+    STA VAR_CURSOR_X
+    LDA VAR_CURSOR_Y
+    MOV L, A
+    MVI H, 0
+    DAD H               ; HL = Y * 2
+    DAD H               ; HL = Y * 4
+    DAD H               ; HL = Y * 8
+    DAD H               ; HL = Y * 16
+    DAD H               ; HL = Y * 32
+    DAD H               ; HL = Y * 64
+    LXI D, 0xA000
+    DAD D               ; HL = 0xA000 + Y * 64
+    SHLD VAR_CURSOR_PTR
+    CALL SYNC_CURSOR
+    JMP PC_DONE
+    
+PC_LF:
+    CALL NEW_LINE
     
 PC_DONE:
     POP PSW
