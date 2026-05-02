@@ -1376,29 +1376,28 @@ C2 25 0A    // JNZ CS_LOOP
 CD E6 0A    // CALL SYNC_CURSOR
 C9          // RET
 E5          // PUSH H
+D5          // PUSH D
 F5          // PUSH PSW
 FE 0D       // CPI 0x0D            ; Carriage Return (\r)
-CA 73 0A    // JZ PC_CR
+CA 72 0A    // JZ PC_CR
 FE 0A       // CPI 0x0A            ; Line Feed (\n)
-CA 91 0A    // JZ PC_LF
-D5          // PUSH D
+CA 90 0A    // JZ PC_LF
 57          // MOV D, A            ; Save character in D
 3A 71 20    // LDA VAR_INVERSE_ATTR
 B2          // ORA D               ; Apply inverse bit
 2A 02 20    // LHLD VAR_CURSOR_PTR
 77          // MOV M, A
-D1          // POP D
 23          // INX H
 22 02 20    // SHLD VAR_CURSOR_PTR
 3A 00 20    // LDA VAR_CURSOR_X
 3C          // INR A
 FE 40       // CPI 64              ; Check if we hit the end of the line (64 cols)
-DA 6A 0A    // JC PC_NO_WRAP
+DA 69 0A    // JC PC_NO_WRAP
 CD 97 0A    // CALL NEW_LINE
-C3 94 0A    // JMP PC_DONE
+C3 93 0A    // JMP PC_DONE
 32 00 20    // STA VAR_CURSOR_X
 CD E6 0A    // CALL SYNC_CURSOR
-C3 94 0A    // JMP PC_DONE
+C3 93 0A    // JMP PC_DONE
 3E 00       // MVI A, 0
 32 00 20    // STA VAR_CURSOR_X
 3A 01 20    // LDA VAR_CURSOR_Y
@@ -1414,9 +1413,10 @@ C3 94 0A    // JMP PC_DONE
 19          // DAD D               ; HL = 0xA000 + Y * 64
 22 02 20    // SHLD VAR_CURSOR_PTR
 CD E6 0A    // CALL SYNC_CURSOR
-C3 94 0A    // JMP PC_DONE
+C3 93 0A    // JMP PC_DONE
 CD 97 0A    // CALL NEW_LINE
 F1          // POP PSW
+D1          // POP D
 E1          // POP H
 C9          // RET
 E5          // PUSH H

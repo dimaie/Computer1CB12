@@ -1909,6 +1909,7 @@ CS_LOOP:
 ; ---------------------------------------------------------
 PRINT_CHAR:
     PUSH H
+    PUSH D
     PUSH PSW
     
     CPI 0x0D            ; Carriage Return (\r)
@@ -1917,7 +1918,6 @@ PRINT_CHAR:
     JZ PC_LF
     
     ; Apply Inverse Attribute Mask
-    PUSH D
     MOV D, A            ; Save character in D
     LDA VAR_INVERSE_ATTR
     ORA D               ; Apply inverse bit
@@ -1925,7 +1925,6 @@ PRINT_CHAR:
     ; Write Character to Text RAM
     LHLD VAR_CURSOR_PTR
     MOV M, A
-    POP D
     
     ; Advance Pointer
     INX H
@@ -1969,6 +1968,7 @@ PC_LF:
     
 PC_DONE:
     POP PSW
+    POP D
     POP H
     RET
 

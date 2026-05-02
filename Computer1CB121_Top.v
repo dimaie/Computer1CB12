@@ -41,7 +41,11 @@ module Computer1CB121_Top(
 	output		     [5:0]		VGA_B,
 
 	//////////// LED //////////
-	output		     [7:0]		LEDR         // LED outputs
+	output		     [7:0]		LEDR,        // LED outputs
+
+	//////////// AUDIO //////////
+	output		     [5:0]		AUDIO_L,     // 6-bit PCM Left Channel
+	output		     [5:0]		AUDIO_R      // 6-bit PCM Right Channel
 	
 );
 
@@ -291,6 +295,67 @@ memory memory(
 	.cursor_style(cursor_style),
 	.gfx_ink_color(gfx_ink_color)
 );
+
+// ========================================================
+// Audio Synthesizer Integration
+// ========================================================
+
+// Memory Address Latch for address decoding outside of memory.v
+reg [15:0] mar;
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        mar <= 16'b0;
+    end else if (mem_mar_we) begin
+        mar <= bus;
+    end
+end
+
+// Audio Synthesizer Control Registers
+reg [15:0] synth_pitch;
+reg [7:0]  synth_volume;
+reg        synth_gate;
+reg        synth_seq_en;
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        synth_pitch <= 16'd0;
+        synth_volume <= 8'd0;
+        synth_gate <= 1'b0;
+        synth_seq_en <= 1'b0;
+    end else if (mem_ram_we && mar[15:4] == 12'hC01) begin // 0xC010 to 0xC01F
+        case (mar[3:0])
+            4'h0: synth_pitch[7:0] <= bus[7:0];
+            4'h1: synth_pitch[15:8] <= bus[7:0];
+            4'h2: synth_volume <= bus[7:0];
+            4'h3: synth_gate <= bus[0];
+            4'h4: synth_seq_en <= bus[0];
+            default: ;
+        endcase
+    end
+end
+
+wire synth_ram_we = mem_ram_we && (mar[15:10] == 6'h18); // 0x6000 - 0x63FF
+wire seq_ram_we   = mem_ram_we && (mar[15:8] == 8'h64);  // 0x6400 - 0x64FF
+
+wire [5:0] audio_out_sig;
+sap3_audio_synth audio_synth (
+    .clk(clk_sys), // Use continuous system clock for audio
+    .rst(rst),
+    .pitch_step(synth_pitch),
+    .volume(synth_volume),
+    .gate_en(synth_gate),
+    .seq_en(synth_seq_en),
+    .seq_addr(mar[7:0]),
+    .seq_data_in(bus[7:0]),
+    .seq_we(seq_ram_we),
+    .cpu_addr(mar[9:0]),
+    .cpu_data_in(bus[7:0]),
+    .cpu_we(synth_ram_we),
+    .audio_out(audio_out_sig)
+);
+
+assign AUDIO_L = audio_out_sig;
+assign AUDIO_R = audio_out_sig;
 
 // Instruction Register: holds current instruction opcode
 ir ir(

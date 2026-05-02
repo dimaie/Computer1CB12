@@ -66,6 +66,21 @@ set_location_assignment PIN_79 -to VGA_B[2]
 set_location_assignment PIN_78 -to VGA_B[1]
 set_location_assignment PIN_77 -to VGA_B[0]
 
+# Audio DAC (PAM8403 Left/Right channels via R-2R)
+set_location_assignment PIN_114 -to AUDIO_L[5]
+set_location_assignment PIN_113 -to AUDIO_L[4]
+set_location_assignment PIN_108 -to AUDIO_L[3]
+set_location_assignment PIN_107 -to AUDIO_L[2]
+set_location_assignment PIN_106 -to AUDIO_L[1]
+set_location_assignment PIN_105 -to AUDIO_L[0]
+
+set_location_assignment PIN_120 -to AUDIO_R[5]
+set_location_assignment PIN_119 -to AUDIO_R[4]
+set_location_assignment PIN_118 -to AUDIO_R[3]
+set_location_assignment PIN_117 -to AUDIO_R[2]
+set_location_assignment PIN_116 -to AUDIO_R[1]
+set_location_assignment PIN_115 -to AUDIO_R[0]
+
 set_location_assignment PIN_239 -to USBP2
 set_location_assignment PIN_238 -to USBN2
 
@@ -82,6 +97,8 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_VSYNC
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_R[*]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_G[*]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to VGA_B[*]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to AUDIO_L[*]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to AUDIO_R[*]
 
 set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
