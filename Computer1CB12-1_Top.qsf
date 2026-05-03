@@ -122,6 +122,17 @@ set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME uart_tb -section_id uart_
 set_global_assignment -name EDA_TEST_BENCH_NAME tb_cpu -section_id eda_simulation
 set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id tb_cpu
 set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME tb_cpu -section_id tb_cpu
+set_global_assignment -name EDA_TEST_BENCH_NAME tb_usb_hid_host -section_id eda_simulation
+set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id tb_usb_hid_host
+set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME tb_usb_hid_host -section_id tb_usb_hid_host
+set_global_assignment -name EDA_TEST_BENCH_FILE uart_tb.v -section_id uart_tb
+set_global_assignment -name EDA_TEST_BENCH_FILE tb_cpu.v -section_id tb_cpu
+set_global_assignment -name EDA_TEST_BENCH_FILE tb_usb_hid_host.v -section_id tb_usb_hid_host
+set_global_assignment -name EDA_TEST_BENCH_NAME tb_sd_spi_master -section_id eda_simulation
+set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id tb_sd_spi_master
+set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME tb_sd_spi_master -section_id tb_sd_spi_master
+set_global_assignment -name EDA_TEST_BENCH_FILE tb_sd_spi_master.v -section_id tb_sd_spi_master
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
 set_global_assignment -name VERILOG_FILE usb_hid_host_rom.v
 set_global_assignment -name VERILOG_FILE usb_hid_host.v
 set_global_assignment -name VERILOG_FILE uart.v
@@ -134,18 +145,6 @@ set_global_assignment -name VERILOG_FILE display_controller.v
 set_global_assignment -name VERILOG_FILE ir.v
 set_global_assignment -name VERILOG_FILE memory.v
 set_global_assignment -name VERILOG_FILE reg_file.v
-set_global_assignment -name VERILOG_FILE seven_segment_decoder.v
 set_global_assignment -name VERILOG_FILE step_button.v
 set_global_assignment -name QIP_FILE usb_vga_pll.qip
-set_global_assignment -name EDA_TEST_BENCH_NAME tb_usb_hid_host -section_id eda_simulation
-set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id tb_usb_hid_host
-set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME tb_usb_hid_host -section_id tb_usb_hid_host
-set_global_assignment -name EDA_TEST_BENCH_FILE uart_tb.v -section_id uart_tb
-set_global_assignment -name EDA_TEST_BENCH_FILE tb_cpu.v -section_id tb_cpu
-set_global_assignment -name EDA_TEST_BENCH_FILE tb_usb_hid_host.v -section_id tb_usb_hid_host
-set_global_assignment -name EDA_TEST_BENCH_NAME tb_sd_spi_master -section_id eda_simulation
-set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id tb_sd_spi_master
-set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME tb_sd_spi_master -section_id tb_sd_spi_master
-set_global_assignment -name EDA_TEST_BENCH_FILE tb_sd_spi_master.v -section_id tb_sd_spi_master
-set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

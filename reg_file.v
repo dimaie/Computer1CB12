@@ -64,13 +64,13 @@ always @(posedge clk, posedge rst) begin
 	end else begin
 		if (ext == EXT_INC) begin
 			// Increment 16-bit register pair by 1
-			{data[wr_dst], data[wr_dst+1]} <= {data[wr_dst], data[wr_dst+1]} + 1;
+			{data[wr_dst], data[wr_dst+1]} <= {data[wr_dst], data[wr_dst+1]} + 16'd1;
 		end else if (ext == EXT_INC2) begin
 			// Increment 16-bit register pair by 2
-			{data[wr_dst], data[wr_dst+1]} <= {data[wr_dst], data[wr_dst+1]} + 2;
+			{data[wr_dst], data[wr_dst+1]} <= {data[wr_dst], data[wr_dst+1]} + 16'd2;
 		end else if (ext == EXT_DEC) begin
 			// Decrement 16-bit register pair by 1
-			{data[wr_dst], data[wr_dst+1]} <= {data[wr_dst], data[wr_dst+1]} - 1;
+			{data[wr_dst], data[wr_dst+1]} <= {data[wr_dst], data[wr_dst+1]} - 16'd1;
 		end else if (we) begin
 			if (wr_ext) begin
 				// Write 16-bit data to register pair
@@ -95,4 +95,3 @@ always @(*) begin
 end
 
 endmodule
-
