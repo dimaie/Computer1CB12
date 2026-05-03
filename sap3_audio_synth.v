@@ -37,19 +37,6 @@ module sap3_audio_synth (
     reg [31:0] seq_ram [0:63];
     reg [31:0] current_step;
 
-    // Dual-Port logic for Sequencer memory
-    always @(posedge clk) begin
-        if (seq_we) begin
-            case (seq_addr[1:0])
-                2'b00: seq_ram[seq_addr[7:2]][7:0]   <= seq_data_in;
-                2'b01: seq_ram[seq_addr[7:2]][15:8]  <= seq_data_in;
-                2'b10: seq_ram[seq_addr[7:2]][23:16] <= seq_data_in;
-                2'b11: seq_ram[seq_addr[7:2]][31:24] <= seq_data_in;
-            endcase
-        end
-        current_step <= seq_ram[seq_ptr]; // Synchronous read
-    end
-
     localparam SEQ_IDLE  = 2'd0;
     localparam SEQ_FETCH = 2'd1;
     localparam SEQ_LOAD  = 2'd2;
@@ -63,6 +50,19 @@ module sap3_audio_synth (
     reg [15:0] hw_pitch;
     reg [7:0]  hw_vol;
     reg        hw_gate;
+
+    // Dual-Port logic for Sequencer memory
+    always @(posedge clk) begin
+        if (seq_we) begin
+            case (seq_addr[1:0])
+                2'b00: seq_ram[seq_addr[7:2]][7:0]   <= seq_data_in;
+                2'b01: seq_ram[seq_addr[7:2]][15:8]  <= seq_data_in;
+                2'b10: seq_ram[seq_addr[7:2]][23:16] <= seq_data_in;
+                2'b11: seq_ram[seq_addr[7:2]][31:24] <= seq_data_in;
+            endcase
+        end
+        current_step <= seq_ram[seq_ptr]; // Synchronous read
+    end
 
     always @(posedge clk) begin
         if (rst || !seq_en) begin

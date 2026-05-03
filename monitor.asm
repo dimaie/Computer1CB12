@@ -47,6 +47,23 @@ VAR_DL_ERR:     DS 2
 VAR_DL_COLOR:   DS 1
 VAR_INVERSE_ATTR: DS 1
 
+VAR_SDHC_FLAG:   DS 1   ; SD Card Type (0=SDSC, 1=SDHC)
+VAR_SD_ERR:      DS 1   ; Last SD Error Code
+
+; FAT32 State Variables
+VAR_SD_LBA:      DS 4   ; Current 32-bit SD Sector Address
+VAR_SD_TEMP:     DS 4   ; Math Temporary
+VAR_PART_LBA:    DS 4   ; Partition 1 Start LBA
+VAR_FAT_LBA:     DS 4   ; FAT Table Start LBA
+VAR_DATA_LBA:    DS 4   ; Data Region Start LBA
+VAR_ROOT_CLUS:   DS 4   ; Root Directory First Cluster
+VAR_CUR_CLUS:    DS 4   ; Current File Cluster
+VAR_FILE_SIZE:   DS 4   ; Size of loaded file
+VAR_SPC:         DS 1   ; Sectors Per Cluster
+VAR_LOAD_ADDR:   DS 2   ; Target Memory Address
+VAR_FILE_NAME:   DS 11  ; 8.3 FAT Filename
+VAR_SECTOR_BUF:  DS 512 ; Hardware SD Block Buffer
+
 ; ---------------------------------------------------------
 ; C-Compiler ROM API Jump Table (Fixed Addresses)
 ; ---------------------------------------------------------
@@ -97,6 +114,14 @@ START:
     MVI A, 0
     STA VAR_KB_STATE
 
+    ; Auto-Initialize SD Card & Mount FAT32
+    CALL SD_INIT
+    JC SD_INIT_PRT_ERR
+    CALL FAT32_MOUNT
+    JMP MAIN_LOOP
+SD_INIT_PRT_ERR:
+    CALL FAT_ERR
+
 MAIN_LOOP:
     ; Print Prompt "->"
     MVI A, '-'
@@ -129,6 +154,10 @@ MAIN_LOOP:
     JZ CMD_STEP
     CPI 'B'
     JZ CMD_BREAKPOINT
+    CPI 'L'
+    JZ CMD_LOAD
+    CPI 'F'
+    JZ CMD_FILES
     
 CMD_ERROR:
     MVI A, '?'
@@ -1904,6 +1933,493 @@ CS_LOOP:
     RET
 
 ; ---------------------------------------------------------
+; Command: Load File (L<FILENAME.EXT>:<ADDR>)
+; ---------------------------------------------------------
+CMD_LOAD:
+    LXI H, VAR_INPUT_BUF + 1
+    CALL SKIP_SPACES
+    
+    ; Initialize 11-char name buffer with spaces
+    LXI D, VAR_FILE_NAME
+    MVI C, 11
+L_FMT_SPC:
+    MVI A, ' ' ! STAX D ! INX D ! DCR C ! JNZ L_FMT_SPC
+    
+    ; Parse 8-char base name
+    LXI D, VAR_FILE_NAME
+    MVI C, 8
+L_FMT_NAME:
+    MOV A, M ! CPI '.' ! JZ L_FMT_DOT
+    CPI ':' ! JZ L_FMT_COLON
+    CPI ' ' ! JZ L_FMT_COLON
+    ORA A ! JZ CMD_ERROR
+    STAX D ! INX D ! INX H ! DCR C ! JNZ L_FMT_NAME
+L_WAIT_DOT:
+    MOV A, M ! CPI '.' ! JZ L_FMT_DOT
+    CPI ':' ! JZ L_FMT_COLON
+    CPI ' ' ! JZ L_FMT_COLON
+    ORA A ! JZ CMD_ERROR
+    INX H ! JMP L_WAIT_DOT
+    
+L_FMT_DOT:
+    INX H
+    LXI D, VAR_FILE_NAME + 8
+    MVI C, 3
+L_FMT_EXT:
+    MOV A, M ! CPI ':' ! JZ L_FMT_COLON
+    CPI ' ' ! JZ L_FMT_COLON
+    ORA A ! JZ CMD_ERROR
+    STAX D ! INX D ! INX H ! DCR C ! JNZ L_FMT_EXT
+L_WAIT_COLON:
+    MOV A, M ! CPI ':' ! JZ L_FMT_COLON
+    CPI ' ' ! JZ L_FMT_COLON
+    ORA A ! JZ CMD_ERROR
+    INX H ! JMP L_WAIT_COLON
+    
+L_FMT_COLON:
+    INX H
+    CALL SKIP_SPACES
+    CALL PARSE_HEX_WORD
+    JC CMD_ERROR
+    SHLD VAR_LOAD_ADDR
+    
+    ; --- Search Root Directory ---
+    LXI D, VAR_ROOT_CLUS ! LXI H, VAR_CUR_CLUS ! CALL COPY_32
+    CALL CLUS_TO_LBA
+    CALL SD_READ_SECTOR
+    JC CMD_ERROR
+    
+    LXI H, VAR_SECTOR_BUF
+    MVI B, 16 ; 16 entries per sector
+L_DIR_LOOP:
+    PUSH B ! PUSH H
+    
+    ; Check attribute byte at offset 11 (0x0B) to prevent loading FAT tables!
+    LXI D, 11 ! DAD D ! MOV A, M
+    CPI 0x0F ! JZ L_DIR_NEXT_POP   ; Skip LFN (Cluster is always 0)
+    ANI 0x08 ! JNZ L_DIR_NEXT_POP  ; Skip Volume ID (Cluster is always 0)
+    
+    POP H ! PUSH H                 ; Restore HL to start of entry
+    
+    LXI D, VAR_FILE_NAME
+    MVI C, 11
+L_CMP_LOOP:
+    LDAX D ! CMP M ! JNZ L_DIR_NEXT_POP
+    INX D ! INX H ! DCR C ! JNZ L_CMP_LOOP
+    
+    ; Matched! Extract Cluster (High: 0x14, Low: 0x1A)
+    POP H
+    LXI D, VAR_CUR_CLUS
+    PUSH H ! LXI B, 0x1A ! DAD B ! MOV A, M ! STAX D ! INX D ! INX H ! MOV A, M ! STAX D ! POP H
+    LXI D, VAR_CUR_CLUS + 2
+    PUSH H ! LXI B, 0x14 ! DAD B ! MOV A, M ! STAX D ! INX D ! INX H ! MOV A, M ! STAX D ! POP H
+    
+    ; Extract Size (0x1C)
+    LXI D, VAR_FILE_SIZE
+    PUSH H ! LXI B, 0x1C ! DAD B ! MOV A, M ! STAX D ! INX D ! INX H ! MOV A, M ! STAX D ! INX D ! INX H ! MOV A, M ! STAX D ! INX D ! INX H ! MOV A, M ! STAX D ! POP H
+    
+    POP B
+    CALL NEW_LINE
+    JMP L_READ_FILE
+    
+L_DIR_NEXT_POP:
+    POP H ! LXI D, 32 ! DAD D ! POP B
+    DCR B ! JNZ L_DIR_LOOP
+    
+    MVI A, '?' ! CALL PRINT_CHAR ! JMP MAIN_LOOP ; Not found
+
+L_READ_FILE:
+    CALL CLUS_TO_LBA
+    LDA VAR_SPC ! MOV B, A
+L_SECTOR_LOOP:
+    PUSH B
+    CALL SD_READ_SECTOR
+    JNC L_SECTOR_OK
+    POP B
+    JMP CMD_ERROR
+L_SECTOR_OK:
+    
+    LHLD VAR_LOAD_ADDR ! XCHG
+    LXI H, VAR_SECTOR_BUF
+    LXI B, 512
+L_COPY_LOOP:
+    MOV A, M ! STAX D ! INX H ! INX D ! DCX B ! MOV A, B ! ORA C ! JNZ L_COPY_LOOP
+    XCHG ! SHLD VAR_LOAD_ADDR
+    
+    ; Print Progress Dot
+    MVI A, '.' ! CALL PRINT_CHAR
+    
+    ; Decrement File Size by 512 (0x0200). Check Underflow.
+    LXI H, VAR_FILE_SIZE + 1
+    MOV A, M ! SUI 2 ! MOV M, A
+    INX H ! MOV A, M ! SBI 0 ! MOV M, A
+    INX H ! MOV A, M ! SBI 0 ! MOV M, A
+    JC L_LOAD_DONE
+    
+    ; If size is exactly 0, finish without reading an extra padding sector
+    LDA VAR_FILE_SIZE
+    LXI H, VAR_FILE_SIZE + 1
+    ORA M ! INX H
+    ORA M ! INX H
+    ORA M
+    JZ L_LOAD_DONE
+    
+    LXI D, VAR_SD_LBA ! LXI H, CONST_ONE_32 ! CALL ADD_32
+    POP B ! DCR B ! JNZ L_SECTOR_LOOP
+    
+    ; Next Contiguous Cluster
+    LXI D, VAR_CUR_CLUS ! LXI H, CONST_ONE_32 ! CALL ADD_32
+    JMP L_READ_FILE
+    
+L_LOAD_DONE:
+    POP B
+    CALL NEW_LINE
+    MVI A, 'O' ! CALL PRINT_CHAR
+    MVI A, 'K' ! CALL PRINT_CHAR
+    CALL NEW_LINE
+    JMP MAIN_LOOP
+    
+CONST_ONE_32: DB 1, 0, 0, 0
+
+; ---------------------------------------------------------
+; Command: List Files (F)
+; ---------------------------------------------------------
+CMD_FILES:
+    CALL NEW_LINE
+    ; --- Load Root Directory Cluster ---
+    LXI D, VAR_ROOT_CLUS ! LXI H, VAR_CUR_CLUS ! CALL COPY_32
+    CALL CLUS_TO_LBA
+    LDA VAR_SPC ! MOV B, A
+F_SECTOR_LOOP:
+    PUSH B
+    CALL SD_READ_SECTOR
+    JNC F_SECTOR_OK
+    POP B
+    JMP CMD_ERROR
+F_SECTOR_OK:
+    
+    LXI H, VAR_SECTOR_BUF
+    MVI B, 16 ; 16 entries per sector
+F_DIR_LOOP:
+    MOV A, M ! ORA A ! JZ F_DONE ; 0x00 = end of directory
+    CPI 0xE5 ! JZ F_NEXT_ENTRY   ; 0xE5 = deleted entry
+    
+    ; Check attribute byte at offset 11 (0x0B)
+    PUSH H
+    LXI D, 11 ! DAD D ! MOV A, M
+    POP H
+    
+    CPI 0x0F ! JZ F_NEXT_ENTRY   ; Skip LFN
+    ANI 0x08 ! JNZ F_NEXT_ENTRY  ; Skip Volume ID
+    
+    ; Valid File/Dir, print it
+    PUSH B ! PUSH H
+    MVI C, 8
+F_PRINT_NAME:
+    MOV A, M ! CPI ' ' ! JZ F_NAME_DONE
+    CALL PRINT_CHAR
+    INX H ! DCR C ! JNZ F_PRINT_NAME
+F_NAME_DONE:
+    POP H ! PUSH H
+    LXI D, 8 ! DAD D ; Move to extension
+    MOV A, M ! CPI ' ' ! JZ F_EXT_DONE
+    
+    MVI A, '.' ! CALL PRINT_CHAR
+    MVI C, 3
+F_PRINT_EXT:
+    MOV A, M ! CPI ' ' ! JZ F_EXT_DONE
+    CALL PRINT_CHAR
+    INX H ! DCR C ! JNZ F_PRINT_EXT
+    
+F_EXT_DONE:
+    CALL NEW_LINE
+    POP H ! POP B
+    
+F_NEXT_ENTRY:
+    LXI D, 32 ! DAD D
+    DCR B ! JNZ F_DIR_LOOP
+    
+    ; Next sector in cluster
+    LXI D, VAR_SD_LBA ! LXI H, CONST_ONE_32 ! CALL ADD_32
+    POP B ! DCR B ! JNZ F_SECTOR_LOOP
+    
+F_DONE:
+    JMP MAIN_LOOP
+
+; ---------------------------------------------------------
+; FAT32 Mount & Parse Routine
+; ---------------------------------------------------------
+FAT32_MOUNT:
+    LXI H, VAR_SD_LBA ! CALL ZERO_32
+    CALL SD_READ_SECTOR
+    JC FAT_ERR
+    LXI D, VAR_SECTOR_BUF + 454 ; Part 1 LBA Offset
+    LXI H, VAR_PART_LBA ! CALL COPY_32
+    
+    LXI D, VAR_PART_LBA ! LXI H, VAR_SD_LBA ! CALL COPY_32
+    CALL SD_READ_SECTOR
+    JC FAT_ERR
+
+    ; FAT16 Check (SectorsPerFAT 16-bit at offset 22 must be 0 for FAT32)
+    LDA VAR_SECTOR_BUF + 22
+    MOV B, A
+    LDA VAR_SECTOR_BUF + 23
+    ORA B
+    JNZ FAT16_ERR
+
+    LDA VAR_SECTOR_BUF + 13 ! STA VAR_SPC
+    
+    LXI D, VAR_PART_LBA ! LXI H, VAR_FAT_LBA ! CALL COPY_32
+    LXI H, VAR_SECTOR_BUF + 14 ! LXI D, VAR_FAT_LBA ! CALL ADD_16_TO_32
+    
+    LXI D, VAR_FAT_LBA ! LXI H, VAR_DATA_LBA ! CALL COPY_32
+    
+    LDA VAR_SECTOR_BUF + 16 ; NumFATs (Dynamically check if 1 or 2 FAT tables exist)
+    MOV B, A
+FAT32_ADD_FATS:
+    LXI H, VAR_SECTOR_BUF + 36 ! LXI D, VAR_DATA_LBA ! CALL ADD_32
+    DCR B ! JNZ FAT32_ADD_FATS
+    
+    LXI D, VAR_SECTOR_BUF + 44
+    LXI H, VAR_ROOT_CLUS ! CALL COPY_32
+    
+    MVI A, 'F' ! CALL PRINT_CHAR ! MVI A, 'A' ! CALL PRINT_CHAR ! MVI A, 'T' ! CALL PRINT_CHAR
+    MVI A, '3' ! CALL PRINT_CHAR ! MVI A, '2' ! CALL PRINT_CHAR ! CALL PRINT_SPACE
+    MVI A, 'O' ! CALL PRINT_CHAR ! MVI A, 'K' ! CALL PRINT_CHAR ! CALL NEW_LINE
+    RET
+
+FAT_ERR:
+    MVI A, 'S' ! CALL PRINT_CHAR ! MVI A, 'D' ! CALL PRINT_CHAR ! CALL PRINT_SPACE
+    MVI A, 'E' ! CALL PRINT_CHAR ! MVI A, 'R' ! CALL PRINT_CHAR ! MVI A, 'R' ! CALL PRINT_CHAR
+    CALL PRINT_SPACE
+    LDA VAR_SD_ERR ! CALL PRINT_HEX_BYTE
+    CALL NEW_LINE
+    STC
+    RET
+
+FAT16_ERR:
+    MVI A, 'F' ! CALL PRINT_CHAR ! MVI A, 'A' ! CALL PRINT_CHAR ! MVI A, 'T' ! CALL PRINT_CHAR
+    MVI A, '1' ! CALL PRINT_CHAR ! MVI A, '6' ! CALL PRINT_CHAR ! CALL PRINT_SPACE
+    MVI A, 'E' ! CALL PRINT_CHAR ! MVI A, 'R' ! CALL PRINT_CHAR ! MVI A, 'R' ! CALL PRINT_CHAR ! CALL NEW_LINE
+    STC
+    RET
+
+CLUS_TO_LBA:
+    LXI D, VAR_CUR_CLUS ! LXI H, VAR_SD_LBA ! CALL COPY_32
+    LXI H, VAR_SD_LBA
+    MOV A, M ! SUI 2 ! MOV M, A
+    INX H ! MOV A, M ! SBI 0 ! MOV M, A
+    INX H ! MOV A, M ! SBI 0 ! MOV M, A
+    INX H ! MOV A, M ! SBI 0 ! MOV M, A
+    
+    LXI D, VAR_SD_LBA ! LXI H, VAR_SD_TEMP ! CALL COPY_32
+    LXI H, VAR_SD_LBA ! CALL ZERO_32
+    LDA VAR_SPC ! MOV B, A
+CTL_MUL:
+    LXI H, VAR_SD_TEMP ! LXI D, VAR_SD_LBA ! CALL ADD_32
+    DCR B ! JNZ CTL_MUL
+    
+    LXI H, VAR_DATA_LBA ! LXI D, VAR_SD_LBA ! CALL ADD_32
+    RET
+
+; --- 32-Bit Math Helpers ---
+ZERO_32:
+    MVI M, 0 ! INX H ! MVI M, 0 ! INX H ! MVI M, 0 ! INX H ! MVI M, 0 ! RET
+COPY_32:
+    LDAX D ! MOV M, A ! INX H ! INX D
+    LDAX D ! MOV M, A ! INX H ! INX D
+    LDAX D ! MOV M, A ! INX H ! INX D
+    LDAX D ! MOV M, A ! RET
+ADD_32:
+    LDAX D ! ADD M ! STAX D ! INX H ! INX D
+    LDAX D ! ADC M ! STAX D ! INX H ! INX D
+    LDAX D ! ADC M ! STAX D ! INX H ! INX D
+    LDAX D ! ADC M ! STAX D ! RET
+ADD_16_TO_32:
+    LDAX D ! ADD M ! STAX D ! INX H ! INX D
+    LDAX D ! ADC M ! STAX D ! INX D
+    LDAX D ! ACI 0 ! STAX D ! INX D
+    LDAX D ! ACI 0 ! STAX D ! RET
+
+; ---------------------------------------------------------
+; SD Card Physical SPI Routines
+; ---------------------------------------------------------
+SD_INIT:
+    ; Delay for power stabilization (~300ms)
+    MVI D, 10
+SD_PWR_DELAY_OUTER:
+    LXI B, 0
+SD_PWR_DELAY:
+    DCX B ! MOV A, B ! ORA C ! JNZ SD_PWR_DELAY
+    DCR D ! JNZ SD_PWR_DELAY_OUTER
+
+    MVI A, 0x01 ! OUT 0x0B
+    MVI B, 100
+SD_ID: MVI A, 0xFF ! CALL SPI_XFER ! DCR B ! JNZ SD_ID
+    
+    ; CMD0 (Retry up to 256 times)
+    MVI B, 0
+SD_CMD0_LOOP:
+    MVI A, 0x01 ! OUT 0x0B  ; CS High
+    MVI A, 0xFF ! CALL SPI_XFER ; Flush clock
+    MVI A, 0x00 ! OUT 0x0B  ; CS Low
+    MVI A, 0xFF ! CALL SPI_XFER ; Setup clock
+    
+    MVI D, 0x95
+    MVI C, 0x40 ! CALL SD_CMD ! CPI 0x01 ! JZ SD_CMD8
+    DCR B ! JNZ SD_CMD0_LOOP
+    JMP SD_ERR_CMD0
+
+    ; CMD8 (0x48)
+SD_CMD8:
+    MVI D, 0x87
+    MVI C, 0x48
+    MVI A, 0x01 ! STA VAR_SD_TEMP+2
+    MVI A, 0xAA ! STA VAR_SD_TEMP+3
+    CALL SD_CMD_ARG
+    
+    CPI 0x01
+    JZ SD_CMD8_OK
+    
+    ; SDSC v1.x detected (CMD8 rejected)
+    XRA A ! STA VAR_SDHC_FLAG
+    JMP SD_INIT_ACMD41
+    
+SD_CMD8_OK:
+    ; Read 4 bytes payload
+    MVI A, 0xFF ! CALL SPI_XFER ! CALL SPI_XFER ! CALL SPI_XFER ! CALL SPI_XFER
+    MVI A, 1 ! STA VAR_SDHC_FLAG
+
+SD_INIT_ACMD41:
+    LXI B, 8000   ; Timeout counter
+SD_ACMD41_LOOP:
+    ; CMD55
+    MVI D, 0xFF
+    MVI C, 0x77 ! CALL SD_CMD
+    
+    ; ACMD41
+    MVI D, 0xFF
+    MVI C, 0x69
+    LDA VAR_SDHC_FLAG ! ORA A ! JZ SD_ACMD41_SDSC
+    MVI A, 0x40 ! STA VAR_SD_TEMP+0 ! JMP SD_ACMD41_SEND
+SD_ACMD41_SDSC:
+    XRA A ! STA VAR_SD_TEMP+0
+SD_ACMD41_SEND:
+    CALL SD_CMD_ARG
+    
+    CPI 0x00 ! JZ SD_INIT_CMD58
+    
+    DCX B ! MOV A, B ! ORA C ! JNZ SD_ACMD41_LOOP
+    JMP SD_ERR_ACMD41
+
+SD_INIT_CMD58:
+    LDA VAR_SDHC_FLAG ! ORA A ! JZ SD_INIT_DONE
+    
+    ; CMD58
+    MVI D, 0xFF
+    MVI C, 0x7A ! CALL SD_CMD ! CPI 0x00 ! JNZ SD_ERR_CMD58
+    
+    ; Read OCR
+    MVI A, 0xFF ! CALL SPI_XFER ! MOV B, A
+    MVI A, 0xFF ! CALL SPI_XFER ! CALL SPI_XFER ! CALL SPI_XFER
+    
+    MOV A, B ! ANI 0x40 ! JNZ SD_INIT_DONE
+    XRA A ! STA VAR_SDHC_FLAG
+    
+SD_INIT_DONE:
+    MVI A, 0x01 ! OUT 0x0B
+    MVI A, 0xFF ! CALL SPI_XFER
+    ORA A
+    RET
+
+SD_ERR_CMD0:
+    MVI A, 0xE0 ! JMP SD_ERR_ABORT
+SD_ERR_ACMD41:
+    MVI A, 0xE1 ! JMP SD_ERR_ABORT
+SD_ERR_CMD58:
+    MVI A, 0xE2
+SD_ERR_ABORT:
+    STA VAR_SD_ERR
+    MVI A, 0x01 ! OUT 0x0B
+    MVI A, 0xFF ! CALL SPI_XFER
+    STC
+    RET
+
+SD_CMD:
+    XRA A
+    STA VAR_SD_TEMP+0 ! STA VAR_SD_TEMP+1 ! STA VAR_SD_TEMP+2 ! STA VAR_SD_TEMP+3
+SD_CMD_ARG:
+    MVI A, 0xFF ! CALL SPI_XFER
+    MOV A, C ! CALL SPI_XFER
+    LDA VAR_SD_TEMP+0 ! CALL SPI_XFER
+    LDA VAR_SD_TEMP+1 ! CALL SPI_XFER
+    LDA VAR_SD_TEMP+2 ! CALL SPI_XFER
+    LDA VAR_SD_TEMP+3 ! CALL SPI_XFER
+    MOV A, D ! CALL SPI_XFER
+    MVI D, 0
+SD_CMD_WAIT:
+    MVI A, 0xFF ! CALL SPI_XFER
+    CPI 0xFF ! RNZ
+    DCR D ! JNZ SD_CMD_WAIT
+    RET
+
+SD_READ_SECTOR:
+    MVI A, 0x02 ! OUT 0x0B
+    MVI D, 0xFF
+    MVI C, 0x51 ; CMD17
+    
+    LDA VAR_SDHC_FLAG ! ORA A ! JNZ SD_RD_SDHC
+    
+    ; SDSC: Address = LBA << 9
+    ORA A
+    LDA VAR_SD_LBA+0 ! RAL ! STA VAR_SD_TEMP+2
+    LDA VAR_SD_LBA+1 ! RAL ! STA VAR_SD_TEMP+1
+    LDA VAR_SD_LBA+2 ! RAL ! STA VAR_SD_TEMP+0
+    XRA A ! STA VAR_SD_TEMP+3
+    JMP SD_RD_SEND
+    
+SD_RD_SDHC:
+    LDA VAR_SD_LBA+3 ! STA VAR_SD_TEMP+0
+    LDA VAR_SD_LBA+2 ! STA VAR_SD_TEMP+1
+    LDA VAR_SD_LBA+1 ! STA VAR_SD_TEMP+2
+    LDA VAR_SD_LBA+0 ! STA VAR_SD_TEMP+3
+    
+SD_RD_SEND:
+    CALL SD_CMD_ARG
+    CPI 0x00 ! JNZ SD_RD_FAIL
+    
+    LXI D, 0
+SD_RW2: 
+    MVI A, 0xFF ! CALL SPI_XFER ! CPI 0xFE ! JZ SD_RL_START
+    DCX D ! MOV A, D ! ORA E ! JNZ SD_RW2
+    
+SD_RD_FAIL:
+    MVI A, 0xE3 ! STA VAR_SD_ERR
+    STC ! JMP SD_END
+
+SD_RL_START:
+    LXI H, VAR_SECTOR_BUF
+    LXI B, 512
+SD_RL: MVI A, 0xFF ! CALL SPI_XFER ! MOV M, A ! INX H ! DCX B ! MOV A, B ! ORA C ! JNZ SD_RL
+    ORA A
+SD_END:
+    PUSH PSW
+    MVI A, 0xFF ! CALL SPI_XFER ! CALL SPI_XFER
+    MVI A, 0x03 ! OUT 0x0B
+    MVI A, 0xFF ! CALL SPI_XFER
+    POP PSW
+    RET
+    
+SPI_XFER:
+    OUT 0x0A            ; Start transmission with dummy or actual data
+SPI_WAIT:
+    IN 0x0B             ; Read Status
+    ANI 0x01            ; Bit 0 is 'ready' status
+    JZ SPI_WAIT         ; Block until the SPI Master is ready
+    IN 0x0A             ; Fetch the clocked-in data
+    RET
+
+; ---------------------------------------------------------
 ; Subroutine: PRINT_CHAR
 ; Prints the character in Accumulator and advances cursor
 ; ---------------------------------------------------------
@@ -2065,7 +2581,7 @@ SCAN_TO_ASCII:
     DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x51, 0x31, 0x00, 0x00, 0x00, 0x5A, 0x53, 0x41, 0x57, 0x32, 0x00 ; 10-1F
     DB  0x00, 0x43, 0x58, 0x44, 0x45, 0x34, 0x33, 0x00, 0x00, 0x20, 0x56, 0x46, 0x54, 0x52, 0x35, 0x00 ; 20-2F
     DB  0x00, 0x4E, 0x42, 0x48, 0x47, 0x59, 0x36, 0x00, 0x00, 0x00, 0x4D, 0x4A, 0x55, 0x37, 0x38, 0x00 ; 30-3F
-    DB  0x00, 0x2C, 0x4B, 0x49, 0x4F, 0x30, 0x39, 0x00, 0x00, 0x2E, 0x2F, 0x4C, 0x3B, 0x50, 0x2D, 0x00 ; 40-4F
+    DB  0x00, 0x2C, 0x4B, 0x49, 0x4F, 0x30, 0x39, 0x00, 0x00, 0x2E, 0x2F, 0x4C, 0x3A, 0x50, 0x2D, 0x00 ; 40-4F
     DB  0x00, 0x00, 0x27, 0x00, 0x5B, 0x3D, 0x00, 0x00, 0x00, 0x00, 0x0D, 0x5D, 0x00, 0x5C, 0x00, 0x00 ; 50-5F
     DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ; 60-6F
     DB  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ; 70-7F

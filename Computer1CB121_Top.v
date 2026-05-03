@@ -45,7 +45,15 @@ module Computer1CB121_Top(
 
 	//////////// AUDIO //////////
 	output		     [5:0]		AUDIO_L,     // 6-bit PCM Left Channel
-	output		     [5:0]		AUDIO_R      // 6-bit PCM Right Channel
+	output		     [5:0]		AUDIO_R,     // 6-bit PCM Right Channel
+	
+	//////////// SD Card //////////
+	output 		          		SD_CLK,      // SPI Clock
+	output 		          		SD_CMD,      // SPI MOSI
+	input  		          		SD_DAT0,     // SPI MISO
+	output 		          		SD_DAT1,     // Unused in SPI, must be pulled high
+	output 		          		SD_DAT2,     // Unused in SPI, must be pulled high
+	output 		          		SD_DAT3      // SPI CS
 	
 );
 
@@ -130,11 +138,43 @@ wire [7:0] uart_rx_data;
 wire uart_rx_done;
 wire uart_tx_busy;
 
+// SD Card SPI signals
+wire [7:0] sd_rx_data;
+wire sd_spi_ready;
+reg sd_cs_n;
+reg sd_fast_mode;
+reg sd_tx_start;
+reg [7:0] sd_tx_latch;
+reg out_we_m1;
+reg out_we_m2;
+reg out_we_m3;
+
+// SD Card Activity LEDs
+reg [19:0] sd_rd_timer;
+reg [19:0] sd_wr_timer;
+
+always @(posedge clk_sys or posedge rst) begin
+    if (rst) begin
+        sd_rd_timer <= 20'd0;
+        sd_wr_timer <= 20'd0;
+    end else begin
+        if (in_oe && (oar_addr == 8'h0A))
+            sd_rd_timer <= 20'd1000000; // ~46ms at 21.47MHz
+        else if (sd_rd_timer > 0)
+            sd_rd_timer <= sd_rd_timer - 1'b1;
+
+        if (out_we && (oar_addr == 8'h0A))
+            sd_wr_timer <= 20'd1000000;
+        else if (sd_wr_timer > 0)
+            sd_wr_timer <= sd_wr_timer - 1'b1;
+    end
+end
+
 // Signal assignments
 wire kb_sys_reset;
 assign rst = (~RESET_N) | kb_sys_reset; // Combine physical and keyboard soft-reset
 
-assign LEDR = port_out[7:0];     // Connect LEDs to output port
+assign LEDR = {(sd_rd_timer > 0), (sd_wr_timer > 0), port_out[5:0]}; // Connect LEDs to output port
 
 // PS/2 Keyboard Latch
 reg [7:0] kb_data;
@@ -150,6 +190,28 @@ always @(posedge clk_sys or posedge rst) begin
             kb_ready <= 1'b1;
         end else if (in_oe && oar_addr == 8'h00) begin
             kb_ready <= 1'b0;
+        end
+    end
+end
+
+// SD Card SPI Start Pulse Generator (clk_sys domain)
+wire out_we_rising = out_we_m2 && !out_we_m3;
+
+always @(posedge clk_sys or posedge rst) begin
+    if (rst) begin
+        sd_tx_start <= 1'b0;
+        out_we_m1 <= 1'b0;
+        out_we_m2 <= 1'b0;
+        out_we_m3 <= 1'b0;
+    end else begin
+        out_we_m1 <= out_we;
+        out_we_m2 <= out_we_m1;
+        out_we_m3 <= out_we_m2;
+        
+        if (out_we_rising && (oar_addr == 8'h0A)) begin
+            sd_tx_start <= 1'b1;
+        end else begin
+            sd_tx_start <= 1'b0;
         end
     end
 end
@@ -189,6 +251,8 @@ always @(*) begin
 		8'h07: in_port_data = mouse_y[15:8];  // Mouse Y High Byte
 		8'h08: in_port_data = mouse_btn;      // Mouse Buttons
 		8'h09: in_port_data = {7'b0, vga_vblank}; // VGA VBLANK Status
+		8'h0A: in_port_data = sd_rx_data;     // SD Card SPI RX Data
+		8'h0B: in_port_data = {7'b0, sd_spi_ready}; // SD Card SPI Status
         default: in_port_data = 8'h00;
     endcase
 end
@@ -214,6 +278,9 @@ always @(posedge clk or posedge rst) begin
     if (rst) begin
         oar_addr <= 8'b0;
         port_out <= 72'b0;
+        sd_cs_n <= 1'b1;
+        sd_fast_mode <= 1'b0;
+        sd_tx_latch <= 8'hFF;
     end else begin
         if (oar_we)
             oar_addr <= bus[7:0];
@@ -223,6 +290,8 @@ always @(posedge clk or posedge rst) begin
                 8'd0: port_out[7:0] <= bus[7:0];
                 8'd1: port_out[35:0] <= {28'b0, bus[7:0]};
                 8'd2: port_out[71:36] <= {28'b0, bus[7:0]};
+                8'h0A: sd_tx_latch <= bus[7:0]; // Safe CPU-clock domain latch
+                8'h0B: {sd_fast_mode, sd_cs_n} <= bus[1:0]; // SPI Control Reg
                 default: ;
             endcase
         end
@@ -474,6 +543,24 @@ sap3_mouse_wrapper mouse_ctrl (
 	.mouse_x(mouse_x),
 	.mouse_y(mouse_y),
 	.mouse_btn(mouse_btn)
+);
+
+// SD Card SPI Master
+assign SD_DAT3 = sd_cs_n; // Drive SD_DAT3 pin as Chip Select (Active Low)
+assign SD_DAT1 = 1'b1;    // Prevent floating/grounding
+assign SD_DAT2 = 1'b1;    // Prevent floating/grounding
+
+sd_spi_master sd_spi (
+    .clk(clk_sys),
+    .rst(rst),
+    .tx_data(sd_tx_latch),
+    .tx_start(sd_tx_start),
+    .fast_mode(sd_fast_mode),
+    .rx_data(sd_rx_data),
+    .ready(sd_spi_ready),
+    .spi_clk(SD_CLK),
+    .spi_mosi(SD_CMD),
+    .spi_miso(SD_DAT0)
 );
 
 endmodule

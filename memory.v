@@ -56,8 +56,8 @@ module memory(
     // -------------------------------------------------------------------------
     // Instantiations of Generic Block RAM Modules
     // -------------------------------------------------------------------------
-    block_rom #(.ADDR_WIDTH(12), .DEPTH(3572), .INIT_FILE("program.hex")) rom_inst (
-        .clk(clk), .addr(mar[11:0]), .q(rom_out)
+    block_rom #(.ADDR_WIDTH(13), .DEPTH(5120), .INIT_FILE("program.hex")) rom_inst (
+        .clk(clk), .addr(mar[12:0]), .q(rom_out)
     );
 
     block_ram #(.ADDR_WIDTH(13), .DEPTH(8192)) ram_inst (
@@ -114,7 +114,7 @@ module memory(
 
     // CPU Memory Read Logic (Combinational multiplexer based on delayed MAR)
     always @(*) begin
-        if (mar_d1 < 16'h0DF4)
+        if (mar_d1 <= 16'h13FF)
             out = rom_out;
         else if (mar_d1 >= 16'h2000 && mar_d1 <= 16'h3FFF)
             out = ram_out;
@@ -171,8 +171,8 @@ endmodule
 
 // Single-Port ROM
 module block_rom #(
-    parameter ADDR_WIDTH = 12,
-    parameter DEPTH = 3072,
+    parameter ADDR_WIDTH = 13,
+    parameter DEPTH = 5120,
     parameter INIT_FILE = "program.hex"
 )(
     input  wire                  clk,

@@ -19,8 +19,8 @@ The hardware is based on the OneChipBook laptop. `OneChipBook12-TechRef.pdf` is 
 - `rst`: Internal reset (active-high).
 
 ## Memory Map
-- `0x0000` - `0x0DF3`: 3572 Bytes Program ROM
-- `0x0DF4` - `0x1FFF`: Unused
+- `0x0000` - `0x13FF`: 5KB Program ROM
+- `0x1400` - `0x1FFF`: Unused
 - `0x2000` - `0x3FFF`: 8KB Program RAM
 - `0x4000` - `0x5DFF`: 7680 Bytes Video Graphics RAM (256x240 monochrome, Read/Write)
 - `0x5E00` - `0x5FFF`: Unused
